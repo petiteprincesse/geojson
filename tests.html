@@ -1,0 +1,1858 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Геопривязка — проверки</title>
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  body { overflow: auto; padding: var(--s-16); }
+  h1 { font-size: 15px; margin: 0 0 var(--s-12); }
+  h2 { font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.06em;
+       color: var(--text-2); margin: var(--s-24) 0 var(--s-8); }
+  .summary { margin: 0 0 var(--s-8); color: var(--text-2); }
+  .summary b { color: var(--text-1); font-variant-numeric: tabular-nums; }
+  .summary.is-ok b.count { color: var(--success); }
+  .summary.is-bad b.count { color: var(--danger); }
+  .problem {
+    max-width: 900px; margin: 0 0 var(--s-6); padding: var(--s-6) var(--s-8);
+    border: 1px solid var(--line-1); border-left: 2px solid var(--danger);
+    border-radius: var(--radius); background: var(--surface-3);
+    font-size: var(--fs-small); color: var(--text-1);
+  }
+  .note { max-width: 900px; margin: 0 0 var(--s-8); color: var(--text-3); font-size: var(--fs-small); }
+  table { border-collapse: collapse; width: 100%; max-width: 900px; }
+  th, td { text-align: left; padding: var(--s-4) var(--s-8); border-bottom: 1px solid var(--line-2); }
+  th { color: var(--text-3); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  td.result { width: 72px; }
+  tr.fail td.result { color: var(--danger); }
+  tr.pass td.result { color: var(--success); }
+  td.got, td.want { font-family: var(--font-mono); font-size: var(--fs-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.got { white-space: normal; }
+  table.measure { width: auto; margin-bottom: var(--s-12); }
+  /* Без заглавных: иначе σ становится Σ (знак суммы), а «м» — «М». */
+  table.measure th { text-align: center; text-transform: none; letter-spacing: 0;
+                     font-size: var(--fs-small); color: var(--text-2); }
+  table.measure td { font-family: var(--font-mono); font-size: var(--fs-small);
+                     font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  table.measure td.label { font-family: var(--font-ui); text-align: left; }
+  table.measure tr.group td { border-top: 1px solid var(--line-1); }
+  details.note summary { cursor: pointer; }
+  details.note pre { font-family: var(--font-mono); font-size: var(--fs-small);
+                     background: var(--surface-3); padding: var(--s-8); border-radius: var(--radius);
+                     overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>Автопроверки</h1>
+<p class="summary" id="summary">Проверки выполняются…</p>
+<div id="problems"></div>
+
+<h2>Форматирование и конфигурация</h2>
+<table>
+  <thead><tr><th>Итог</th><th>Проверка</th><th>Получено</th><th>Ожидалось</th></tr></thead>
+  <tbody id="rows-fmt"></tbody>
+</table>
+
+<h2>Геодезия</h2>
+<p class="note">Каждая проверка прогоняется на семи опорных точках — Москва, Мурманск,
+  Сочи, Норильск, экватор, 84°, южное полушарие — и показывает худший результат
+  из всех; в скобках названа точка, на которой он получен.</p>
+<table>
+  <thead><tr><th>Итог</th><th>Проверка</th><th>Получено</th><th>Допуск</th></tr></thead>
+  <tbody id="rows-geo"></tbody>
+</table>
+
+<h2>Разбор файла и преобразование</h2>
+<table>
+  <thead><tr><th>Итог</th><th>Проверка</th><th>Получено</th><th>Ожидалось</th></tr></thead>
+  <tbody id="rows-step3"></tbody>
+</table>
+
+<h2>Эталонные слои и сравнение</h2>
+<p class="note">Выгрузка приложения — градусы, а не метры местной системы.
+  Такие файлы распознаются до разбора и открываются эталонным слоем.</p>
+<table>
+  <thead><tr><th>Итог</th><th>Проверка</th><th>Получено</th><th>Ожидалось</th></tr></thead>
+  <tbody id="rows-ref"></tbody>
+</table>
+
+<h2>Опорные точки</h2>
+<p class="note">Пары «точка файла ↔ точка карты» задают подобие сами.
+  Проверки идут на синтетике с известным подобием: решение обязано
+  вернуть ровно те параметры, из которых сделаны точки.</p>
+<table>
+  <thead><tr><th>Итог</th><th>Проверка</th><th>Получено</th><th>Ожидалось</th></tr></thead>
+  <tbody id="rows-gcp"></tbody>
+</table>
+
+<h2>Устойчивость к ошибке клика</h2>
+<p class="note">Измерение, а не проверка «сходится или нет». Участок А из examples/
+  (318 × 241 м, 11 вершин) кладётся на карту известным подобием: поворот 23°, масштаб 1.
+  Выбираются N вершин, их истинное положение на карте портится гауссовым шумом σ по обеим
+  осям при 1,3 м на пиксель — так промахивается курсор. Точку на контуре не портим: она
+  притягивается к вершине. Подобие подгоняется тем же кодом, что в приложении; по 1000
+  повторов на ячейку, генератор с фиксированным зерном. Ошибка положения — расстояние
+  от найденной опорной точки контура до истинной.</p>
+<table class="measure">
+  <thead>
+    <tr><th rowspan="2">N</th><th colspan="2">Ошибка клика σ</th>
+        <th colspan="2">Положение, м</th><th colspan="2">Поворот, градусы</th></tr>
+    <tr><th>пикс</th><th>м</th><th>RMS</th><th>95 %</th><th>RMS</th><th>95 %</th></tr>
+  </thead>
+  <tbody id="click-table"></tbody>
+</table>
+<p class="note">Расположение точек при N = 4 и σ = 1 пиксель: одни и те же четыре
+  точки каждый раз, меняется только шум.</p>
+<table class="measure">
+  <thead>
+    <tr><th>Расположение</th><th>Вершины</th>
+        <th>Положение RMS, м</th><th>Положение 95 %, м</th>
+        <th>Поворот RMS, °</th><th>Поворот 95 %, °</th></tr>
+  </thead>
+  <tbody id="click-geometry"></tbody>
+</table>
+<details class="note">
+  <summary>Таблица текстом — для переноса в документ или Excel</summary>
+  <pre id="click-tsv"></pre>
+</details>
+<table>
+  <thead><tr><th>Итог</th><th>Граница</th><th>Получено</th><th>Ожидалось</th></tr></thead>
+  <tbody id="rows-click"></tbody>
+</table>
+
+<h2>Выгрузка</h2>
+<p class="note">Главная здесь — проверка замыкания круга: контур кладётся на карту
+  в заведомо неудобном положении, выгружается, и по парам координат из самой
+  выгрузки подобие подгоняется обратно.</p>
+<table>
+  <thead><tr><th>Итог</th><th>Проверка</th><th>Получено</th><th>Ожидалось</th></tr></thead>
+  <tbody id="rows-export"></tbody>
+</table>
+
+<script src="js/ns.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sample.js"></script>
+<script src="js/map.js"></script>
+<script src="js/transform.js"></script>
+<script src="js/gcp.js"></script>
+<script src="js/export.js"></script>
+
+<script>
+/* Свой раннер. Два правила, которые важнее удобства:
+   1. Блок объявляет ожидаемое число проверок. Если строк вышло меньше —
+      значит часть проверок молча отвалилась, и весь набор красный.
+   2. Каждая проверка выполняется в своём try/catch: исключение красит
+      её саму, а не уносит остаток блока. */
+var T = (function () {
+  var blocks = [];
+  var passed = 0, failed = 0;
+
+  var SUP = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴',
+              '5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻' };
+
+  function q(v, digits) {
+    if (typeof v !== 'number' || !isFinite(v)) return GP.fmt.DASH;
+    var a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e7)) {
+      var parts = v.toExponential(digits === undefined ? 3 : digits).split('e');
+      var exp = String(Number(parts[1])).split('').map(function (ch) { return SUP[ch]; }).join('');
+      return (parts[0].replace('.', ',') + '·' + '10' + exp).replace(/-/g, '−');
+    }
+    /* Обычные числа печатает форматирование приложения: запятая
+       и неразрывный пробел в разрядах. */
+    return GP.fmt.num(v, digits === undefined ? 6 : digits);
+  }
+
+  function val(v, unit, digits) { return q(v, digits) + (unit ? GP.NBSP + unit : ''); }
+
+  function paint(tbody, name, got, want, ok) {
+    var tr = document.createElement('tr');
+    tr.className = ok ? 'pass' : 'fail';
+    tr.innerHTML = '<td class="result">' + (ok ? 'пройдено' : 'провал') + '</td>' +
+      '<td>' + name + '</td><td class="got">' + got + '</td><td class="want">' + want + '</td>';
+    document.getElementById(tbody).appendChild(tr);
+  }
+
+  function Block(name, tbody, expected) {
+    this.name = name; this.tbody = tbody; this.expected = expected; this.rows = 0;
+  }
+
+  Block.prototype.add = function (name, got, want, ok) {
+    this.rows++;
+    if (ok) passed++; else failed++;
+    paint(this.tbody, name, got, want, ok);
+  };
+
+  /* fn возвращает {got, want, ok} и может уточнить имя строки полем name. */
+  Block.prototype.raw = function (name, fn) {
+    var r;
+    try {
+      r = fn();
+    } catch (e) {
+      this.add(name, 'исключение: ' + e.message, GP.fmt.DASH, false);
+      return;
+    }
+    this.add(r.name || name, r.got, r.want, r.ok);
+  };
+
+  Block.prototype.is = function (name, fn, want) {
+    this.raw(name, function () {
+      var got = fn();
+      return { got: String(got), want: String(want), ok: got === want };
+    });
+  };
+
+  /* fn возвращает число или {value, note} — note дописывается к имени. */
+  Block.prototype.le = function (name, fn, tol, unit, digits) {
+    this.raw(name, function () {
+      var r = fn();
+      var v = typeof r === 'number' ? r : r.value;
+      return {
+        name: name + ((r && r.note) || ''),
+        got: val(v, unit, digits),
+        want: '≤' + GP.NBSP + val(tol, unit, digits),
+        ok: typeof v === 'number' && isFinite(v) && v <= tol
+      };
+    });
+  };
+
+  Block.prototype.ge = function (name, fn, min, unit, digits) {
+    this.raw(name, function () {
+      var r = fn();
+      var v = typeof r === 'number' ? r : r.value;
+      return {
+        name: name + ((r && r.note) || ''),
+        got: val(v, unit, digits),
+        want: '≥' + GP.NBSP + val(min, unit, digits),
+        ok: typeof v === 'number' && isFinite(v) && v >= min
+      };
+    });
+  };
+
+  Block.prototype.between = function (name, fn, min, max, unit, digits) {
+    this.raw(name, function () {
+      var r = fn();
+      return {
+        got: val(r.lo, unit, digits) + ' … ' + val(r.hi, unit, digits),
+        want: val(min, '', digits) + ' … ' + val(max, unit, digits),
+        ok: isFinite(r.lo) && isFinite(r.hi) && r.lo >= min && r.hi <= max
+      };
+    });
+  };
+
+  function block(name, tbody, expected) {
+    var b = new Block(name, tbody, expected);
+    blocks.push(b);
+    return b;
+  }
+
+  function summary() {
+    var expected = 0, problems = [];
+    blocks.forEach(function (b) {
+      expected += b.expected;
+      if (b.rows !== b.expected) {
+        failed++;
+        problems.push('Блок «' + b.name + '»: ожидалось ' + b.expected +
+                      ' проверок, выполнено ' + b.rows);
+      }
+    });
+
+    document.getElementById('problems').innerHTML = problems.map(function (t) {
+      return '<p class="problem">' + t + '</p>';
+    }).join('');
+
+    var ok = problems.length === 0 && failed === 0 && passed === expected;
+    var el = document.getElementById('summary');
+    el.className = 'summary ' + (ok ? 'is-ok' : 'is-bad');
+    el.innerHTML = 'Пройдено <b class="count">' + passed + '</b>' +
+      ', провалено <b class="count">' + failed + '</b>' +
+      ', ожидалось всего <b>' + expected + '</b>';
+
+    window.__gpTests = {
+      passed: passed, failed: failed, expected: expected, ok: ok, problems: problems,
+      blocks: blocks.map(function (b) {
+        return { name: b.name, expected: b.expected, rows: b.rows };
+      })
+    };
+  }
+
+  return { block: block, summary: summary, q: q, val: val };
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Форматирование и конфигурация', 'rows-fmt', 28);
+  var NBSP = GP.NBSP;
+  var f = GP.fmt;
+  function eq(name, fn, want) { b.is(name, fn, want); }
+
+  eq('num: разряды неразрывным пробелом', function () { return f.num(1234567.5, 1); },
+     '1' + NBSP + '234' + NBSP + '567,5');
+  eq('num: четырёхзначное тоже с разрядом', function () { return f.num(5000, 0); },
+     '5' + NBSP + '000');
+  eq('num: десятичная запятая', function () { return f.num(0.5, 2); }, '0,50');
+  eq('num: минус без потери нуля', function () { return f.num(-12.34, 1); }, '−' + '12,3');
+  eq('num: не число', function () { return f.num(NaN, 2); }, f.DASH);
+  eq('len: единица через неразрывный пробел', function () { return f.len(342.5); },
+     '342,5' + NBSP + 'м');
+  eq('len: тысячи метров без дробной части', function () { return f.len(5000); },
+     '5' + NBSP + '000' + NBSP + 'м');
+  eq('deg: градус примыкает к числу', function () { return f.deg(42.5); }, '42,5°');
+  eq('latlon: шесть знаков и полушария', function () { return f.latlon(55.751244, 37.618423); },
+     '55,751244°' + NBSP + 'с.' + NBSP + 'ш., 37,618423°' + NBSP + 'в.' + NBSP + 'д.');
+  eq('latlon: южная и западная', function () { return f.latlon(-33.86882, -70.5); },
+     '33,868820°' + NBSP + 'ю.' + NBSP + 'ш., 70,500000°' + NBSP + 'з.' + NBSP + 'д.');
+  eq('scale: знаменатель с разрядами', function () { return f.scale(5000); },
+     '1:5' + NBSP + '000');
+  eq('mpp: метры на пиксель', function () { return f.mpp(0.298); }, '0,30' + NBSP + 'м/пикс');
+
+  eq('подложек четыре, в заданном порядке', function () {
+    return GP.map.BASEMAPS.map(function (x) { return x.title; }).join(' / ');
+  }, 'Снимок с подписями / Космоснимок / Схема Яндекс / Схема Esri');
+
+  function yandex() {
+    return GP.map.BASEMAPS.filter(function (x) { return x.id === 'yandex'; })[0];
+  }
+
+  /* Без этого параметра Яндекс отдаёт эллиптический Меркатор, и на широте
+     Москвы карта уезжает примерно на 20 км к северу. */
+  eq('Яндекс: в адресе тайлов есть projection=web_mercator', function () {
+    return yandex().tiles[0].url.indexOf('&projection=web_mercator') > 0;
+  }, true);
+  /* Проверяется сборка адреса, а не ключ в поставке: в публичной копии
+     ключа нет, а у того, кто впишет свой, проверка не должна падать. */
+  eq('Яндекс: ключ, язык и слой схемы в адресе', function () {
+    var u = GP.map.yandexUrl('ключ-для-проверки', 1);
+    return /apikey=[^&]+/.test(u) && u.indexOf('lang=ru_RU') > 0 && u.indexOf('l=map') > 0 &&
+           u.indexOf('projection=web_mercator') > 0;
+  }, true);
+  eq('Яндекс: scale=2 только на плотных экранах', function () {
+    return [GP.map.yandexUrl('k', 1).indexOf('scale=2') >= 0,
+            GP.map.yandexUrl('k', 2).indexOf('&scale=2') >= 0].join('/');
+  }, 'false/true');
+  eq('Яндекс: без ключа подложка видна, но неактивна', function () {
+    return [GP.map.isAvailable(yandex(), ''), GP.map.isAvailable(yandex(), '   '),
+            GP.map.isAvailable(yandex(), 'ключ'), GP.map.isAvailable(GP.map.BASEMAPS[0], '')].join('/');
+  }, 'false/false/true/true');
+  eq('Яндекс: атрибуция и ссылка на Яндекс Карты', function () {
+    var y = yandex();
+    return y.tiles[0].options.attribution + ' | ' + y.logo.text + ' → ' + y.logo.href;
+  }, '© Яндекс | Яндекс Карты → https://yandex.ru/maps');
+  eq('ни одна подложка не ходит на tile.openstreetmap.org', function () {
+    return GP.map.BASEMAPS.some(function (x) {
+      return x.tiles.some(function (t) { return t.url.indexOf('tile.openstreetmap.org') >= 0; });
+    });
+  }, false);
+  eq('у каждой подложки назван источник для сообщений', function () {
+    return GP.map.BASEMAPS.every(function (x) { return !!x.source; });
+  }, true);
+
+  /* Доступность подложки: ориентир — «ни одного успешного тайла»,
+     плюс отказ сервера, который приходит картинкой и для браузера
+     выглядит как успешная загрузка. */
+  var ST = GP.map.basemapStatus;
+  eq('подложка: отказ сервера виден сразу, даже если тайлы «загрузились»', function () {
+    return ST({ denied: true, loaded: 12, failed: 0, requested: 12 }, 500);
+  }, 'unavailable');
+  eq('подложка: хоть один успешный тайл — работает', function () {
+    return ST({ denied: false, loaded: 1, failed: 0, requested: 9 }, 400);
+  }, 'ok');
+  eq('подложка: три секунды без единого успешного — недоступна', function () {
+    return ST({ denied: false, loaded: 0, failed: 9, requested: 9 }, 3000);
+  }, 'unavailable');
+  eq('подложка: ошибки за краем покрытия при успешных — работает', function () {
+    return ST({ denied: false, loaded: 20, failed: 6, requested: 26 }, 5000);
+  }, 'ok');
+  eq('подложка: скрытая ничего не запрашивает — без тревоги', function () {
+    return ST({ denied: false, loaded: 0, failed: 0, requested: 0 }, 9000);
+  }, 'pending');
+  eq('по умолчанию — снимок с подписями', function () {
+    return GP.map.BASEMAPS.filter(function (x) { return x.isDefault; })
+      .map(function (x) { return x.id; }).join();
+  }, 'imagery-labels');
+  eq('снимок тянется до 21 зума', function () {
+    return GP.map.BASEMAPS[0].tiles[0].options.maxZoom;
+  }, 21);
+  eq('образец контура замкнут', function () {
+    var outer = GP.sample.geojson.geometry.coordinates[0];
+    return outer[0].join() === outer[outer.length - 1].join();
+  }, true);
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Геодезия', 'rows-geo', 37);
+  var g = GP.geo;
+  var D = Math.PI / 180;
+
+  var ANCHORS = [
+    { name: 'Москва',   lat: 55.7558,  lon: 37.6173 },
+    { name: 'Мурманск', lat: 68.9585,  lon: 33.0827 },
+    { name: 'Сочи',     lat: 43.5855,  lon: 39.7231 },
+    { name: 'Норильск', lat: 69.3558,  lon: 88.1893 },
+    { name: 'экватор',  lat: 0,        lon: 0 },
+    { name: '84°',      lat: 84,       lon: 10 },
+    { name: 'южное полушарие', lat: -33.8688, lon: 151.2093 }
+  ];
+
+  /* Невыпуклый пятиугольник в метрах условной системы координат. */
+  var PENTAGON = [[0, 0], [1200, 150], [640, 620], [1320, 1500], [-180, 980]];
+  /* Площадка около километра — для сравнения ENU с Меркатором. */
+  var PLOT = [[0, 0], [1000, 0], [1000, 1000], [500, 600], [0, 1000]];
+  var AZ8 = [0, 45, 90, 135, 180, 225, 270, 315];
+
+  function centroid(ring) {
+    var x = 0, y = 0;
+    ring.forEach(function (p) { x += p[0]; y += p[1]; });
+    return [x / ring.length, y / ring.length];
+  }
+  function hypot(dx, dy) { return Math.sqrt(dx * dx + dy * dy); }
+
+  /* Худшее значение по всем опорным точкам вместе с её названием. */
+  function worst() {
+    return { v: -Infinity, who: '', put: function (v, who) {
+      if (v > this.v) { this.v = v; this.who = who; } } };
+  }
+  function result(w) { return { value: w.v, note: ' (' + w.who + ')' }; }
+
+  function place(ring, anchor, rotationDeg, scale) {
+    var c = centroid(ring);
+    return ring.map(function (p) {
+      var s = g.similarity(p[0], p[1], {
+        originX: c[0], originY: c[1], rotationDeg: rotationDeg, scale: scale || 1
+      });
+      return g.enuToGeodetic(s.e, s.n, anchor);
+    });
+  }
+  function measure(geodetic, anchor) {
+    var p = g.geodeticToEnu(geodetic.lat, geodetic.lon, anchor, 0);
+    return [p.e, p.n];
+  }
+
+  /* ---------- 1. Геодезические → ECEF → геодезические ---------- */
+
+  b.le('1. Геодезические → ECEF → геодезические, четыре высоты', function () {
+    var w = worst();
+    ANCHORS.forEach(function (A) {
+      [0, 137.5, -25, 3000].forEach(function (h) {
+        var p = g.geodeticToEcef(A.lat, A.lon, h);
+        var back = g.ecefToGeodetic(p[0], p[1], p[2]);
+        var errLat = Math.abs(back[0] - A.lat) * D * g.A;
+        var errLon = Math.abs(back[1] - A.lon) * D * g.A * Math.cos(A.lat * D);
+        w.put(Math.max(errLat, errLon, Math.abs(back[2] - h)), A.name);
+      });
+    });
+    return result(w);
+  }, 1e-6, 'м');
+
+  /* ---------- 2 и 3. Round-trip через ENU ---------- */
+
+  [0, 1, 500, 5000, 20000, 100000].forEach(function (d) {
+    b.le('2. ENU → геодезические → ENU с высотой, смещение ' + GP.fmt.len(d, 0),
+      function () {
+        var w = worst();
+        ANCHORS.forEach(function (A) {
+          AZ8.forEach(function (az) {
+            var e = d * Math.sin(az * D), n = d * Math.cos(az * D);
+            var p = g.enuToGeodetic(e, n, A);
+            var back = g.geodeticToEnu(p.lat, p.lon, A, p.h);
+            w.put(Math.max(Math.abs(back.e - e), Math.abs(back.n - n), Math.abs(back.u)), A.name);
+          });
+        });
+        return result(w);
+      }, 1e-6, 'м');
+  });
+
+  [[500, 1e-4], [2000, 1e-3], [5000, 0.01], [20000, 0.2]].forEach(function (pair) {
+    b.le('3. Цена уплощения: высота отброшена, радиус площадки ' + GP.fmt.len(pair[0], 0),
+      function () {
+        var w = worst();
+        ANCHORS.forEach(function (A) {
+          AZ8.forEach(function (az) {
+            var e = pair[0] * Math.sin(az * D), n = pair[0] * Math.cos(az * D);
+            var p = g.enuToGeodetic(e, n, A);
+            var back = g.geodeticToEnu(p.lat, p.lon, A, 0);
+            w.put(hypot(back.e - e, back.n - n), A.name);
+          });
+        });
+        return result(w);
+      }, pair[1], 'м');
+  });
+
+  /* ---------- 4. Сверка с прямой задачей Vincenty ---------- */
+
+  [[100, 1e-3], [1000, 1e-3], [5000, 0.02], [20000, 0.5]].forEach(function (pair) {
+    b.le('4. Сверка с Vincenty, 24 азимута, расстояние ' + GP.fmt.len(pair[0], 0),
+      function () {
+        var s = pair[0], w = worst();
+        ANCHORS.forEach(function (A) {
+          for (var k = 0; k < 24; k++) {
+            var az = k * 15;
+            var mine = g.enuToGeodetic(s * Math.sin(az * D), s * Math.cos(az * D), A);
+            var ref = g.vincentyDirect(A.lat, A.lon, az, s);
+            var a1 = g.geodeticToEnu(mine.lat, mine.lon, A, 0);
+            var a2 = g.geodeticToEnu(ref.lat, ref.lon, A, 0);
+            w.put(hypot(a1.e - a2.e, a1.n - a2.n), A.name);
+          }
+        });
+        return result(w);
+      }, pair[1], 'м');
+  });
+
+  /* ---------- 5. Квадрат 1000 × 1000 м ---------- */
+
+  b.le('5. Квадрат 1000 × 1000 м: отклонение стороны, померенной обратно', function () {
+    var w = worst();
+    ANCHORS.forEach(function (A) {
+      var corners = [[-500, -500], [500, -500], [500, 500], [-500, 500]].map(function (c) {
+        return g.enuToGeodetic(c[0], c[1], A);
+      });
+      for (var i = 0; i < 4; i++) {
+        var p = measure(corners[i], A), n = measure(corners[(i + 1) % 4], A);
+        w.put(Math.abs(hypot(n[0] - p[0], n[1] - p[1]) - 1000), A.name);
+      }
+    });
+    return result(w);
+  }, 0.002, 'м');
+
+  /* ---------- 6. Главная: попарные расстояния пятиугольника ---------- */
+
+  [0, 37, 123, 270, -15.5].forEach(function (rot) {
+    b.le('6. Пятиугольник, поворот ' + GP.fmt.deg(rot, rot % 1 === 0 ? 0 : 1) +
+         ': все попарные расстояния', function () {
+      var w = worst();
+      ANCHORS.forEach(function (A) {
+        var placed = place(PENTAGON, A, rot, 1).map(function (p) { return measure(p, A); });
+        for (var i = 0; i < PENTAGON.length; i++) {
+          for (var j = i + 1; j < PENTAGON.length; j++) {
+            var src = hypot(PENTAGON[i][0] - PENTAGON[j][0], PENTAGON[i][1] - PENTAGON[j][1]);
+            var got = hypot(placed[i][0] - placed[j][0], placed[i][1] - placed[j][1]);
+            w.put(Math.abs(got - src), A.name);
+          }
+        }
+      });
+      return result(w);
+    }, 0.005, 'м');
+  });
+
+  /* ---------- 7. Азимут локальной оси +Y ----------
+     Азимут короткого отрезка — плохо обусловленная величина: он равен
+     поперечному сдвигу, делённому на длину базы. Один ulp долготы
+     (7·10⁻¹⁵ градуса) на базе 10 м даёт уже 1,6·10⁻⁹ градуса, то есть
+     на такой базе допуск 1·10⁻⁹ лежит ниже разрядной сетки double.
+     Поэтому азимут меряется на базе от километра, а близкие точки
+     проверяются напрямую: отклонение долготы от меридиана и поперечный
+     сдвиг. Обе величины обусловлены хорошо. */
+
+  function axisY(kind) {
+    var w = worst();
+    ANCHORS.forEach(function (A) {
+      [10, 100, 1000, 20000].forEach(function (d) {
+        var s = g.similarity(0, d, { originX: 0, originY: 0, rotationDeg: 0, scale: 1 });
+        var p = g.enuToGeodetic(s.e, s.n, A);
+        if (kind === 'lon') { w.put(Math.abs(p.lon - A.lon), A.name); return; }
+        if (kind === 'cross') { w.put(Math.abs(g.geodeticToEnu(p.lat, p.lon, A, 0).e), A.name); return; }
+        if (d < 1000) return;
+        var f1 = A.lat * D, f2 = p.lat * D, dl = (p.lon - A.lon) * D;
+        var br = Math.atan2(Math.sin(dl) * Math.cos(f2),
+          Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl)) / D;
+        if (br > 180) br -= 360;
+        if (br < -180) br += 360;
+        w.put(Math.abs(br), A.name);
+      });
+    });
+    return result(w);
+  }
+
+  b.le('7. При повороте 0° азимут локальной оси +Y, база 1 и 20 км',
+       function () { return axisY('azimuth'); }, 1e-9, 'градуса');
+  b.le('7. Ось +Y лежит на меридиане опорной точки: отклонение долготы',
+       function () { return axisY('lon'); }, 1e-12, 'градуса');
+  b.le('7. Поперечный сдвиг оси +Y, базы от 10 м до 20 км',
+       function () { return axisY('cross'); }, 1e-8, 'м');
+
+  /* ---------- 8. Подгонка подобия ---------- */
+
+  function fitSynthetic() {
+    var c = centroid(PENTAGON);
+    var known = { originX: c[0], originY: c[1], rotationDeg: 33.75, scale: 1 };
+    var dst = PENTAGON.map(function (p) {
+      var s = g.similarity(p[0], p[1], known);
+      return [s.e + 412345.678, s.n - 98765.4321];
+    });
+    return g.fitSimilarity(PENTAGON, dst);
+  }
+
+  b.le('8. Подгонка синтетики: восстановленный масштаб',
+       function () { return Math.abs(fitSynthetic().scale - 1); }, 1e-7, '');
+  b.le('8. Подгонка синтетики: восстановленный угол',
+       function () { return Math.abs(fitSynthetic().rotationDeg - 33.75); }, 1e-4, 'градуса');
+  b.le('8. Подгонка синтетики: невязка RMS',
+       function () { return fitSynthetic().rms; }, 1e-3, 'м');
+
+  b.is('8. Одна пара: только сдвиг, масштаб 1, поворот 0°', function () {
+    var one = g.fitSimilarity([[10, 20]], [[110, 220]]);
+    return [one.tx, one.ty, one.scale, one.rotationDeg].join(' ');
+  }, '100 200 1 0');
+  b.is('8. Две пары: точное решение, поворот 90°', function () {
+    var two = g.fitSimilarity([[0, 0], [100, 0]], [[10, 10], [10, 110]]);
+    return two.rms === 0 && Math.abs(two.rotationDeg - 90) < 1e-12 &&
+           Math.abs(two.scale - 1) < 1e-12;
+  }, true);
+  b.is('8. Все точки совпали: null вместо NaN', function () {
+    return g.fitSimilarity([[5, 5], [5, 5], [5, 5]], [[1, 2], [3, 4], [5, 6]]);
+  }, null);
+
+  /* ---------- 9. Запрет считать в Меркаторе ---------- */
+
+  function mercatorVsEnu() {
+    var enuWorst = worst(), merLo = Infinity, merHi = -Infinity, ratioMin = Infinity;
+    ANCHORS.forEach(function (A) {
+      var pts = place(PLOT, A, 20, 1);
+      var dstEnu = pts.map(function (p) { return measure(p, A); });
+      var dstMer = pts.map(function (p) {
+        var m = g.toMercator(p.lat, p.lon);
+        return [m.x, m.y];
+      });
+      var fitEnu = g.fitSimilarity(PLOT, dstEnu);
+      var fitMer = g.fitSimilarity(PLOT, dstMer);
+      /* Единицы Меркатора переводим в метры на местности: на широте φ
+         они растянуты примерно в 1/cos φ раз. */
+      var merMeters = fitMer.rms * Math.cos(A.lat * D);
+      enuWorst.put(fitEnu.rms, A.name);
+      merLo = Math.min(merLo, merMeters);
+      merHi = Math.max(merHi, merMeters);
+      ratioMin = Math.min(ratioMin, merMeters / fitEnu.rms);
+    });
+    return { enu: enuWorst, lo: merLo, hi: merHi, ratio: ratioMin };
+  }
+
+  b.le('9. Площадка 1 км: невязка RMS подгонки в ENU',
+       function () { return result(mercatorVsEnu().enu); }, 1e-3, 'м');
+  b.between('9. Та же подгонка в EPSG:3857: невязка RMS, метры на местности',
+       function () { var r = mercatorVsEnu(); return { lo: r.lo, hi: r.hi }; }, 0.1, 3, 'м', 3);
+  b.ge('9. Во сколько раз Меркатор хуже ENU: одномасштабное подобие ' +
+       'не поглощает анизотропию', function () { return mercatorVsEnu().ratio; }, 1000, '', 0);
+
+  /* ---------- 10. Контрольные значения Web Mercator ---------- */
+
+  b.le('10. Меркатор: (0°, 0°) → (0, 0)', function () {
+    var m = g.toMercator(0, 0);
+    return Math.max(Math.abs(m.x), Math.abs(m.y));
+  }, 1e-6, 'м');
+  b.le('10. Меркатор: (0°, 180°) → x = 20 037 508,342789', function () {
+    return Math.abs(g.toMercator(0, 180).x - 20037508.342789);
+  }, 1e-3, 'м');
+  b.le('10. Меркатор: (85,0511287798066°, 0°) → y = 20 037 508,342789', function () {
+    return Math.abs(g.toMercator(85.0511287798066, 0).y - 20037508.342789);
+  }, 1e-3, 'м');
+  b.le('10. Два пути к y: R·ln tg(45° + φ/2) против R·atanh(sin φ)', function () {
+    var w = worst();
+    ANCHORS.forEach(function (A) {
+      var phi = A.lat * D;
+      w.put(Math.abs(g.A * Math.log(Math.tan(Math.PI / 4 + phi / 2)) -
+                     g.A * Math.atanh(Math.sin(phi))), A.name);
+    });
+    return result(w);
+  }, 1e-6, 'м');
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Разбор файла и преобразование', 'rows-step3', 43);
+  var NBSP = GP.NBSP;
+
+  function ring(x, y, s) { return [[x, y], [x + s, y], [x + s, y + s], [x, y + s], [x, y]]; }
+  function poly(c) { return { type: 'Polygon', coordinates: c }; }
+
+  var _sample = null;
+  function sample() {
+    if (!_sample) _sample = GP.store.build(GP.sample.geojson, GP.sample.name);
+    return _sample;
+  }
+
+  /* ---------- разбор ---------- */
+
+  b.is('Разбор: голая геометрия Polygon', function () {
+    return JSON.stringify(GP.store.build(poly([ring(0, 0, 100)]), 'a').counts);
+  }, '{"polygons":1,"rings":1,"vertices":4}');
+  b.is('Разбор: замыкающая вершина отброшена', function () {
+    return GP.store.build(poly([ring(0, 0, 100)]), 'a').counts.vertices;
+  }, 4);
+  b.is('Разбор: внутреннее кольцо', function () {
+    return GP.store.build({ type: 'Feature', geometry: poly([ring(0, 0, 100), ring(20, 20, 30)]) }, 'b').counts.rings;
+  }, 2);
+  b.is('Разбор: MultiPolygon с дыркой', function () {
+    return JSON.stringify(GP.store.build({ type: 'MultiPolygon', coordinates:
+      [[ring(0, 0, 100)], [ring(300, 0, 50), ring(310, 10, 20)]] }, 'c').counts);
+  }, '{"polygons":2,"rings":3,"vertices":12}');
+  b.is('Разбор: FeatureCollection, точка пропущена', function () {
+    return GP.store.build({ type: 'FeatureCollection', features: [
+      { type: 'Feature', geometry: poly([ring(0, 0, 100)]) },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: [5, 5] } },
+      { type: 'Feature', geometry: poly([ring(500, 500, 80)]) }
+    ] }, 'd').counts.polygons;
+  }, 2);
+  b.is('Разбор: из [x, y, z] берутся первые две', function () {
+    return JSON.stringify(GP.store.build(poly([[[1, 2, 12], [11, 2, 13], [11, 12, 9], [1, 12, 7]]]), 'e')
+      .polygons[0][0][0]);
+  }, '[1,2]');
+
+  b.is('Образец: габарит 900 × 620 м', function () {
+    return GP.fmt.num(sample().bbox.width, 1) + ' × ' + GP.fmt.num(sample().bbox.height, 1);
+  }, '900,0 × 620,0');
+  b.is('Образец: центр габарита', function () {
+    return sample().center.x + '; ' + sample().center.y;
+  }, '2180450; 476310');
+  b.is('Образец: вершин и колец', function () {
+    return sample().counts.vertices + '/' + sample().counts.rings;
+  }, '10/2');
+
+  function codeOf(text) {
+    try { GP.store.parse(text, 'x'); return 'без ошибки'; }
+    catch (e) { return e.code; }
+  }
+  b.is('Ошибка: не JSON', function () { return codeOf('это не json'); }, 'not-json');
+  b.is('Ошибка: нет полигонов', function () {
+    return codeOf('{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]}}');
+  }, 'no-polygons');
+  b.is('Ошибка: все вершины нечисловые', function () {
+    return codeOf('{"type":"Polygon","coordinates":[[["a","b"],["c","d"],["e","f"]]]}');
+  }, 'no-numbers');
+
+  function levels(src) {
+    return GP.store.diagnose(src).map(function (w) { return w.level; }).join(',');
+  }
+  b.is('Диагностика: координаты похожи на градусы', function () {
+    return levels(GP.store.build(poly([[[37.6, 55.75], [37.6005, 55.75], [37.6005, 55.7504], [37.6, 55.7504]]]), 'g'));
+  }, 'danger');
+  b.is('Диагностика: габарит больше 500 км', function () {
+    return levels(GP.store.build(poly([ring(0, 0, 600000)]), 'h'));
+  }, 'warning');
+  b.is('Диагностика: габарит вырожден по оси', function () {
+    return levels(GP.store.build(poly([[[0, 0], [100, 0], [50, 0], [25, 0]]]), 'i'));
+  }, 'warning');
+  b.is('Диагностика: обычный участок в метрах без предупреждений', function () {
+    return levels(sample());
+  }, '');
+
+  /* ---------- подсказка про миллиметры ----------
+     Файлы из examples/ по file:// не прочитать, поэтому здесь
+     прямоугольники с теми же габаритами. */
+
+  function boxOf(w, h) {
+    return GP.store.build(poly([[[0, 0], [w, 0], [w, h], [0, h], [0, 0]]]), 'габарит');
+  }
+  function hintText(src) {
+    var hnt = GP.store.millimetreHint(src);
+    return hnt ? GP.fmt.num(hnt.mmWidth, 1) + ' \u00D7 ' + GP.fmt.num(hnt.mmHeight, 1) : 'нет';
+  }
+
+  b.is('Миллиметры: габарит как у участка Г даёт подсказку 318 × 241 м',
+       function () { return hintText(boxOf(318000, 241000)); }, '318,0 \u00D7 241,0');
+  b.is('Миллиметры: участок Д в метрах (2,7 км) подсказки не даёт',
+       function () { return hintText(boxOf(2660.9, 2576)); }, 'нет');
+  b.is('Миллиметры: участок А в метрах (318 м) подсказки не даёт',
+       function () { return hintText(boxOf(318, 241)); }, 'нет');
+  b.is('Миллиметры: 50 000 единиц — подсказка про участок 50 м',
+       function () { return hintText(boxOf(50000, 20000)); }, '50,0 \u00D7 20,0');
+  b.is('Миллиметры: меньше 10 000 единиц — молчит',
+       function () { return hintText(boxOf(9000, 4000)); }, 'нет');
+  b.is('Миллиметры: 2 000 000 единиц — подсказка про участок 2 км',
+       function () { return hintText(boxOf(2000000, 1500000)); }, '2' + GP.NBSP + '000,0 \u00D7 1' + GP.NBSP + '500,0');
+  b.is('Миллиметры: рядом с подсказкой остаётся предупреждение про 500 км', function () {
+    return GP.store.diagnose(boxOf(2000000, 1500000)).map(function (w) { return w.level; }).join(',');
+  }, 'warning');
+  b.is('Миллиметры: больше 5 000 000 единиц — молчит',
+       function () { return hintText(boxOf(6000000, 100000)); }, 'нет');
+
+  b.is('Выбор единиц сбрасывается новым файлом и откатывается отменой', function () {
+    GP.store.load(boxOf(318000, 241000), { lat: 55.75, lon: 37.62 });
+    var fresh = GP.store.state.unitsConfirmed;
+    GP.store.snapshot();
+    GP.transform.setScale(0.001);
+    GP.store.set({ unitsConfirmed: true }, 'scale');
+    var chosen = GP.store.state.unitsConfirmed;
+    GP.store.undo();
+    return [fresh, chosen, GP.store.state.unitsConfirmed, GP.store.state.scale].join('/');
+  }, 'false/true/false/1');
+
+  /* ---------- преобразование ---------- */
+
+  var ANCHOR = { lat: 55.7558, lon: 37.6173 };
+
+  function pairwiseError(state) {
+    var frame = GP.transform.frameOf(state);
+    var pts = state.source.vertices.map(function (v) {
+      var ll = GP.transform.vertexLatLng(v.x, v.y, state, frame);
+      return frame.toEnu(ll[0], ll[1], 0);
+    });
+    var vs = state.source.vertices, worst = 0;
+    for (var i = 0; i < vs.length; i++) {
+      for (var j = i + 1; j < vs.length; j++) {
+        var src = Math.hypot(vs[i].x - vs[j].x, vs[i].y - vs[j].y) * state.scale;
+        var got = Math.hypot(pts[i].e - pts[j].e, pts[i].n - pts[j].n);
+        worst = Math.max(worst, Math.abs(got - src));
+      }
+    }
+    return worst;
+  }
+
+  [0, 37, -15.5].forEach(function (rot) {
+    b.le('Преобразование: поворот ' + GP.fmt.deg(rot, rot % 1 === 0 ? 0 : 1) +
+         ' сохраняет все попарные расстояния', function () {
+      return pairwiseError({ source: sample(), anchor: ANCHOR, rotation: rot, scale: 1 });
+    }, 0.005, 'м');
+  });
+  b.le('Преобразование: масштаб 0,001 сохраняет расстояния', function () {
+    return pairwiseError({ source: sample(), anchor: ANCHOR, rotation: 20, scale: 0.001 });
+  }, 0.005, 'м');
+
+  b.le('Преобразование: ENU → местные метры возвращает вершину', function () {
+    var st = { source: sample(), anchor: ANCHOR, rotation: 0, scale: 1 };
+    var enu = GP.transform.localToEnu(2180700, 476500, st);
+    var back = GP.transform.enuToLocal(enu.e, enu.n, st);
+    return Math.max(Math.abs(back.x - 2180700), Math.abs(back.y - 476500));
+  }, 1e-6, 'м');
+  b.le('Преобразование: то же с поворотом 33°', function () {
+    var st = { source: sample(), anchor: ANCHOR, rotation: 33, scale: 1 };
+    var enu = GP.transform.localToEnu(2180700, 476500, st);
+    var back = GP.transform.enuToLocal(enu.e, enu.n, st);
+    return Math.max(Math.abs(back.x - 2180700), Math.abs(back.y - 476500));
+  }, 1e-6, 'м');
+
+  b.is('Габарит на карте при масштабе 0,001', function () {
+    return GP.fmt.len(GP.transform.sizeOnMap({ source: sample(), scale: 0.001 }).width, 2);
+  }, '0,90' + NBSP + 'м');
+  b.is('Азимут оси +Y при повороте −90°', function () {
+    return GP.fmt.deg(GP.transform.azimuthY({ rotation: -90 }), 0);
+  }, '90°');
+  b.is('Азимут оси +Y при повороте 37°', function () {
+    return GP.fmt.deg(GP.transform.azimuthY({ rotation: 37 }), 0);
+  }, '323°');
+  b.is('Угол по положению ручки: восток даёт −90°', function () {
+    return GP.fmt.deg(GP.transform.rotationFromEnu(100, 0), 0);
+  }, '−90°');
+  b.is('Ручка не ближе 15 м даже у крошечного контура', function () {
+    return GP.fmt.len(GP.transform.handleDistance({ source: { bbox: {}, radius: 1 }, scale: 1 }), 0);
+  }, '15' + NBSP + 'м');
+
+  /* ---------- история ---------- */
+
+  var hist = {};
+
+  b.is('История: два действия — два снимка', function () {
+    GP.store.load(sample(), ANCHOR);
+    hist.d0 = GP.store.depth().undo;
+    GP.store.snapshot();
+    GP.transform.rotateBy(30);
+    GP.store.snapshot();
+    GP.transform.moveBy(100, 0);
+    hist.moved = GP.store.state.anchor.lon;
+    return GP.store.depth().undo - hist.d0;
+  }, 2);
+  b.is('История: отмена вернула сдвиг', function () {
+    GP.store.undo();
+    return GP.store.state.anchor.lon === hist.moved;
+  }, false);
+  b.is('История: поворот ещё на месте', function () { return GP.store.state.rotation; }, 30);
+  b.is('История: вторая отмена вернула поворот', function () {
+    GP.store.undo();
+    return GP.store.state.rotation;
+  }, 0);
+  b.is('История: возврат вернул поворот', function () {
+    GP.store.redo();
+    return GP.store.state.rotation;
+  }, 30);
+  b.is('История: глубина ограничена сотней', function () {
+    hist.deep = GP.store.depth().undo;
+    for (var k = 0; k < 150; k++) { GP.store.snapshot(); GP.transform.rotateBy(1); }
+    return GP.store.depth().undo;
+  }, 100);
+  b.is('История: до переполнения снимков было меньше', function () {
+    return hist.deep < 100;
+  }, true);
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Выгрузка', 'rows-export', 23);
+  var DATE = new Date(2026, 8, 23, 14, 5, 0);
+  var ANCHOR = { lat: 55.7431, lon: 37.5908 };
+  var ROT = 33.75;
+
+  var _sample = null;
+  function sample() {
+    if (!_sample) _sample = GP.store.build(GP.sample.geojson, GP.sample.name);
+    return _sample;
+  }
+
+  /* Тот же участок, но файл в миллиметрах: координаты в тысячу раз
+     больше, масштаб 0,001, на местности те же 900 × 620 м. */
+  var _mm = null;
+  function sampleMm() {
+    if (!_mm) {
+      var g = JSON.parse(JSON.stringify(GP.sample.geojson));
+      g.geometry.coordinates = g.geometry.coordinates.map(function (ring) {
+        return ring.map(function (p) { return [p[0] * 1000, p[1] * 1000]; });
+      });
+      _mm = GP.store.build(g, 'участок-в-миллиметрах.geojson');
+    }
+    return _mm;
+  }
+
+  function state(scale, source) {
+    return { source: source || sample(), anchor: ANCHOR, rotation: ROT, scale: scale || 1 };
+  }
+  function data(scale, source) { return GP.export.build(state(scale, source), DATE); }
+
+  /* Замыкание круга: подобие подгоняется обратно ПО ПАРАМ КООРДИНАТ
+     ИЗ САМОЙ ВЫГРУЗКИ, а не по внутреннему состоянию приложения. */
+  function roundTrip(scale, source) {
+    var d = data(scale, source);
+    var p = d['параметры_трансформирования'];
+    var frame = GP.geo.frame({
+      lat: p['опорная_точка_wgs84']['широта'],
+      lon: p['опорная_точка_wgs84']['долгота']
+    });
+    var src = [], dst = [];
+    d['каталог_координат'].forEach(function (r) {
+      src.push([r.x, r.y]);
+      var e = frame.toEnu(r['широта'], r['долгота'], 0);
+      dst.push([e.e, e.n]);
+    });
+    return GP.geo.fitSimilarity(src, dst);
+  }
+
+  b.le('Замыкание круга: восстановленный масштаб',
+       function () { return Math.abs(roundTrip().scale - 1); }, 1e-6, '');
+  b.le('Замыкание круга: восстановленный угол',
+       function () { return Math.abs(roundTrip().rotationDeg - ROT); }, 1e-4, 'градуса');
+  b.le('Замыкание круга: невязка RMS',
+       function () { return roundTrip().rms; }, 1e-3, 'м');
+  b.le('Замыкание круга для файла в миллиметрах: масштаб 0,001 восстановлен',
+       function () { return Math.abs(roundTrip(0.001, sampleMm()).scale / 0.001 - 1); }, 1e-6, '');
+  b.le('Замыкание круга для файла в миллиметрах: угол и невязка', function () {
+    var f = roundTrip(0.001, sampleMm());
+    return Math.max(Math.abs(f.rotationDeg - ROT) / 1e-4, f.rms / 1e-3);
+  }, 1, 'доли допуска', 3);
+
+  b.le('Попарные расстояния в выгруженных координатах', function () {
+    var d = data();
+    var p = d['параметры_трансформирования']['опорная_точка_wgs84'];
+    var frame = GP.geo.frame({ lat: p['широта'], lon: p['долгота'] });
+    var rows = d['каталог_координат'];
+    var enu = rows.map(function (r) { return frame.toEnu(r['широта'], r['долгота'], 0); });
+    var worst = 0;
+    for (var i = 0; i < rows.length; i++) {
+      for (var j = i + 1; j < rows.length; j++) {
+        var src = Math.hypot(rows[i].x - rows[j].x, rows[i].y - rows[j].y);
+        var got = Math.hypot(enu[i].e - enu[j].e, enu[i].n - enu[j].n);
+        worst = Math.max(worst, Math.abs(got - src));
+      }
+    }
+    return worst;
+  }, 0.001, 'м');
+
+  /* ---------- CSV ---------- */
+
+  function parseCsv(text, sep, decimal) {
+    var body = text.replace(/^﻿/, '');
+    var lines = body.trim().split('\r\n');
+    var head = lines.shift().split(sep);
+    return {
+      head: head,
+      rows: lines.map(function (line) {
+        var cells = line.split(sep);
+        var row = {};
+        head.forEach(function (h, i) {
+          var v = decimal === ',' ? cells[i].replace(',', '.') : cells[i];
+          row[h] = Number(v);
+        });
+        return row;
+      })
+    };
+  }
+
+  b.is('CSV: кодировка начинается с BOM, иначе Excel испортит кириллицу', function () {
+    return GP.export.toCsv(state(), {}, DATE).charCodeAt(0) === 0xFEFF;
+  }, true);
+
+  b.is('CSV: заголовок столбцов на русском', function () {
+    return parseCsv(GP.export.toCsv(state(), { delimiter: ';', decimal: ',' }, DATE), ';', ',').head.join('|');
+  }, '№|X файла|Y файла|Широта|Долгота|X EPSG:3857|Y EPSG:3857|Полигон|Кольцо|Вершина');
+
+  b.is('CSV: строк ровно по числу вершин', function () {
+    return parseCsv(GP.export.toCsv(state(), { delimiter: ';', decimal: ',' }, DATE), ';', ',').rows.length;
+  }, 10);
+
+  b.le('CSV разбирается обратно и даёт те же числа, что JSON', function () {
+    var d = data();
+    var csv = parseCsv(GP.export.toCsv(state(), { delimiter: ';', decimal: ',' }, DATE), ';', ',');
+    var worst = 0;
+    d['каталог_координат'].forEach(function (r, i) {
+      var row = csv.rows[i];
+      worst = Math.max(worst,
+        Math.abs(row['X файла'] - r.x), Math.abs(row['Y файла'] - r.y),
+        Math.abs(row['Широта'] - r['широта']), Math.abs(row['Долгота'] - r['долгота']),
+        Math.abs(row['X EPSG:3857'] - r.x_3857), Math.abs(row['Y EPSG:3857'] - r.y_3857),
+        Math.abs(row['№'] - r['номер']));
+    });
+    return worst;
+  }, 0, '');
+
+  b.is('CSV: точка как десятичный знак позволяет запятую в разделителе', function () {
+    var csv = GP.export.toCsv(state(), { delimiter: ',', decimal: '.' }, DATE);
+    var head = csv.replace(/^﻿/, '').split('\r\n')[0];
+    return head.indexOf(',') > 0 && head.indexOf(';') < 0;
+  }, true);
+
+  b.is('CSV: запятая не может быть сразу разделителем и десятичным знаком', function () {
+    var csv = GP.export.toCsv(state(), { delimiter: ',', decimal: ',' }, DATE);
+    var head = csv.replace(/^﻿/, '').split('\r\n')[0];
+    return head.indexOf(';') > 0 && head.indexOf(',') < 0;
+  }, true);
+
+  /* ---------- JSON ---------- */
+
+  b.le('JSON: ни одного числа длиннее 9 знаков после запятой', function () {
+    var text = GP.export.toJson(state(), DATE);
+    var m = text.match(/\d+\.\d+/g) || [];
+    var worst = 0;
+    m.forEach(function (n) { worst = Math.max(worst, n.split('.')[1].length); });
+    return worst;
+  }, 9, 'знаков', 0);
+
+  b.le('JSON: метры в каталоге округлены до 4 знаков', function () {
+    var worst = 0;
+    data()['каталог_координат'].forEach(function (r) {
+      ['x', 'y', 'x_3857', 'y_3857'].forEach(function (k) {
+        var s = String(r[k]);
+        var dot = s.indexOf('.');
+        if (dot >= 0) worst = Math.max(worst, s.length - dot - 1);
+      });
+    });
+    return worst;
+  }, 4, 'знаков', 0);
+
+  b.is('JSON: параметры совпадают с заданными', function () {
+    var p = data()['параметры_трансформирования'];
+    return [
+      p['опорная_точка_wgs84']['широта'],
+      p['опорная_точка_wgs84']['долгота'],
+      p['поворот_против_часовой_градусы'],
+      p['азимут_оси_y_градусы'],
+      p['масштаб_метров_в_единице_файла'],
+      p['опорная_точка_в_координатах_файла'].x
+    ].join('|');
+  }, [ANCHOR.lat, ANCHOR.lon, ROT, 360 - ROT, 1, 2180450].join('|'));
+
+  b.is('JSON: модель и эллипсоид названы', function () {
+    var p = data()['параметры_трансформирования'];
+    return p['модель'] + ' / ' + p['эллипсоид']['имя'] + ' / ' +
+           p['эллипсоид']['большая_полуось_м'] + ' / ' + p['эллипсоид']['обратное_уплощение'];
+  }, 'подобие, 4 параметра / WGS 84 / 6378137 / 298.257223563');
+
+  b.is('JSON: каталог ссылается на полигон, кольцо и вершину', function () {
+    var rows = data()['каталог_координат'];
+    var last = rows[rows.length - 1];
+    return rows.length + ':' + last['полигон'] + '/' + last['кольцо'] + '/' + last['вершина'];
+  }, '10:1/2/4');
+
+  b.le('JSON: оценка модели совпадает с расчётом панели', function () {
+    var q = data()['оценка_модели'];
+    var size = GP.transform.sizeOnMap(state());
+    return Math.max(
+      Math.abs(q['радиус_площадки_м'] - GP.export.round(size.radius, 4)),
+      Math.abs(q['ожидаемая_погрешность_касательной_плоскости_м'] -
+               GP.export.round(GP.transform.expectedError(size.radius), 9))
+    );
+  }, 0, '');
+
+  b.is('JSON: строка GCP для gdal_translate', function () {
+    var gcp = data()['gcp_gdal_translate'];
+    return (gcp.indexOf('-a_srs EPSG:4326') === 0) + '/' + (gcp.match(/-gcp /g) || []).length;
+  }, 'true/4');
+
+  /* ---------- geojson ---------- */
+
+  b.is('geojson: FeatureCollection с MultiPolygon', function () {
+    var g = JSON.parse(GP.export.toGeoJson(state(), DATE));
+    return g.type + '/' + g.features.length + '/' + g.features[0].geometry.type + '/' +
+           g.features[0].geometry.coordinates.length + '/' +
+           g.features[0].geometry.coordinates[0].length;
+  }, 'FeatureCollection/1/MultiPolygon/1/2');
+
+  b.is('geojson: все кольца замкнуты', function () {
+    var g = JSON.parse(GP.export.toGeoJson(state(), DATE));
+    var ok = true;
+    g.features[0].geometry.coordinates.forEach(function (poly) {
+      poly.forEach(function (ring) {
+        if (ring[0][0] !== ring[ring.length - 1][0] ||
+            ring[0][1] !== ring[ring.length - 1][1]) ok = false;
+      });
+    });
+    return ok;
+  }, true);
+
+  b.le('geojson: координаты идут как долгота, широта и совпадают с каталогом', function () {
+    var g = JSON.parse(GP.export.toGeoJson(state(), DATE));
+    var first = g.features[0].geometry.coordinates[0][0][0];
+    var row = data()['каталог_координат'][0];
+    return Math.max(Math.abs(first[0] - row['долгота']), Math.abs(first[1] - row['широта']));
+  }, 0, 'градуса');
+
+  b.is('Имя файла: исходное имя, дата и время', function () {
+    return GP.export.fileName(state(), '_каталог', 'csv', DATE);
+  }, 'Участок-образец_привязка_2026-09-23_1405_каталог.csv');
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Эталонные слои и сравнение', 'rows-ref', 31);
+  var DATE = new Date(2026, 8, 23, 14, 5, 0);
+  var ANCHOR = { lat: 55.7431, lon: 37.5908 };
+  var ROT = 33.75;
+
+  var _sample = null;
+  function sample() {
+    if (!_sample) _sample = GP.store.build(GP.sample.geojson, GP.sample.name);
+    return _sample;
+  }
+  function state(scale) {
+    return { source: sample(), anchor: ANCHOR, rotation: ROT, scale: scale || 1 };
+  }
+  function exportedGeoJson() { return JSON.parse(GP.export.toGeoJson(state(), DATE)); }
+  function exportedJson() { return JSON.parse(GP.export.toJson(state(), DATE)); }
+
+  /* ---------- распознавание ---------- */
+
+  b.is('Распознавание: выгруженный geojson', function () {
+    var f = GP.store.detectResult(exportedGeoJson());
+    return f.kind + ' / ' + f.created;
+  }, 'geojson / 2026-09-23T14:05:00 UTC+03:00');
+
+  b.is('Распознавание: выгруженный JSON', function () {
+    return GP.store.detectResult(exportedJson()).kind;
+  }, 'json');
+
+  b.is('Распознавание: обычный полигон — не результат', function () {
+    return GP.store.detectResult(GP.sample.geojson);
+  }, null);
+
+  b.is('Распознавание: geojson без наших свойств — не результат', function () {
+    var g = exportedGeoJson();
+    delete g.features[0].properties['опорная_точка'];
+    return GP.store.detectResult(g);
+  }, null);
+
+  b.is('Распознавание: чтение файла сообщает о результате', function () {
+    var r = GP.store.read(GP.export.toGeoJson(state(), DATE));
+    return r.result.kind;
+  }, 'geojson');
+
+  /* ---------- сборка эталона ---------- */
+
+  b.is('Эталон из geojson: кольца, вершины, параметры', function () {
+    var ref = GP.store.buildReference(exportedGeoJson(), 'эталон.geojson');
+    return [ref.counts.polygons, ref.counts.rings, ref.counts.vertices,
+            ref.rotation, ref.scale, ref.anchor.lat, ref.anchor.lon].join('|');
+  }, ['1', '2', '10', ROT, 1, ANCHOR.lat, ANCHOR.lon].join('|'));
+
+  b.is('Эталон из JSON: те же кольца и параметры', function () {
+    var ref = GP.store.buildReference(exportedJson(), 'эталон.json');
+    return [ref.counts.polygons, ref.counts.rings, ref.counts.vertices,
+            ref.rotation, ref.scale, ref.anchor.lat, ref.anchor.lon].join('|');
+  }, ['1', '2', '10', ROT, 1, ANCHOR.lat, ANCHOR.lon].join('|'));
+
+  b.le('Эталон: геометрия из geojson и из JSON совпадает', function () {
+    var a = GP.store.buildReference(exportedGeoJson(), 'a');
+    var c = GP.store.buildReference(exportedJson(), 'b');
+    var worst = 0;
+    a.polygons.forEach(function (poly, pi) {
+      poly.forEach(function (ring, ri) {
+        ring.forEach(function (p, vi) {
+          var q = c.polygons[pi][ri][vi];
+          worst = Math.max(worst, Math.abs(p[0] - q[0]), Math.abs(p[1] - q[1]));
+        });
+      });
+    });
+    return worst;
+  }, 0, 'градуса');
+
+  b.is('Эталон: замыкающая вершина не задваивается', function () {
+    var ring = GP.store.buildReference(exportedGeoJson(), 'a').polygons[0][0];
+    return ring.length + '/' + (ring[0].join() === ring[ring.length - 1].join());
+  }, '6/false');
+
+  b.is('Эталон: чужой файл отвергается с понятным кодом', function () {
+    try { GP.store.buildReference(GP.sample.geojson, 'чужой'); return 'без ошибки'; }
+    catch (e) { return e.code; }
+  }, 'not-result');
+
+  /* ---------- сравнение ---------- */
+
+  function movedState(north, rotationDelta, scaleFactor) {
+    var g = GP.geo.enuToGeodetic(0, north, ANCHOR, 0);
+    return {
+      source: sample(),
+      anchor: { lat: g.lat, lon: g.lon },
+      rotation: ROT + (rotationDelta || 0),
+      scale: 1 * (scaleFactor || 1)
+    };
+  }
+
+  b.le('Сравнение: сдвиг на 100 м измеряется как 100 м', function () {
+    var ref = GP.store.buildReference(exportedGeoJson(), 'эталон');
+    return Math.abs(GP.transform.compare(movedState(100), ref).shift - 100);
+  }, 1e-3, 'м');
+
+  b.le('Сравнение: сдвиг на 12 345 м по геодезической линии', function () {
+    var ref = GP.store.buildReference(exportedGeoJson(), 'эталон');
+    var far = GP.geo.vincentyDirect(ANCHOR.lat, ANCHOR.lon, 57, 12345);
+    var st = { source: sample(), anchor: { lat: far.lat, lon: far.lon }, rotation: ROT, scale: 1 };
+    var c = GP.transform.compare(st, ref);
+    return Math.max(Math.abs(c.shift - 12345), Math.abs(c.azimuth - 57) * 100);
+  }, 1e-4, 'м');
+
+  /* Единое направление: все величины — текущая привязка относительно
+     эталонной. Поворот со знаком по кратчайшей дуге, масштаб
+     относительной разницей, сдвиг без знака. */
+  b.is('Сравнение: разница поворота и масштаба', function () {
+    var ref = GP.store.buildReference(exportedGeoJson(), 'эталон');
+    var c = GP.transform.compare(movedState(0, 0.5, 1.0002), ref);
+    return GP.fmt.deg(c.rotation, 3) + ' / ' + Math.round(c.scaleRel * 1e6) + ' млн\u207B\u00B9';
+  }, '0,500° / 200 млн\u207B\u00B9');
+
+  b.is('Сравнение: поворот считается по короткой дуге', function () {
+    var ref = { anchor: ANCHOR, rotation: 179, scale: 1 };
+    var st = { anchor: ANCHOR, rotation: -179, scale: 1 };
+    return GP.fmt.deg(GP.transform.compare(st, ref).rotation, 0);
+  }, '2°');
+
+  /* ---------- сквозные проверки: задать, выгрузить, загрузить эталоном ----------
+     Тот самый круг, в котором нашлась дыра: раньше сквозь выгрузку
+     проверялся только сдвиг. */
+
+  function place(rotation, scale, north) {
+    var anchor = ANCHOR;
+    if (north) {
+      var g = GP.geo.enuToGeodetic(0, north, ANCHOR, 0);
+      anchor = { lat: g.lat, lon: g.lon };
+    }
+    return {
+      source: sample(), anchor: anchor,
+      rotation: rotation, scale: scale === undefined ? 1 : scale,
+      gcp: [], workScale: 500
+    };
+  }
+
+  /* Эталон собирается из настоящей выгрузки, а не из объекта в памяти. */
+  function referenceOf(state, kind) {
+    var text = kind === 'json' ? GP.export.toJson(state, DATE) : GP.export.toGeoJson(state, DATE);
+    return GP.store.buildReference(JSON.parse(text), 'эталон.' + (kind || 'geojson'));
+  }
+
+  b.is('Сквозная: эталон 30°, текущая 0° \u2014 текущая отстаёт на 30°', function () {
+    var c = GP.transform.compare(place(0), referenceOf(place(30)));
+    return GP.fmt.deg(c.rotation, 3);
+  }, '\u221230,000°');
+
+  b.is('Сквозная: то же через каталог координат JSON', function () {
+    var c = GP.transform.compare(place(0), referenceOf(place(30), 'json'));
+    return GP.fmt.deg(c.rotation, 3);
+  }, '\u221230,000°');
+
+  b.is('Сквозная: эталон 0°, текущая 30° \u2014 знак меняется на плюс', function () {
+    var c = GP.transform.compare(place(30), referenceOf(place(0)));
+    return GP.fmt.deg(c.rotation, 3);
+  }, '30,000°');
+
+  b.is('Сквозная: поворот через ноль — 20° по кратчайшей дуге, а не 340°', function () {
+    var c = GP.transform.compare(place(10), referenceOf(place(350)));
+    return GP.fmt.deg(c.rotation, 3);
+  }, '20,000°');
+
+  b.is('Сквозная: отрицательный поворот эталона', function () {
+    var c = GP.transform.compare(place(0), referenceOf(place(-45)));
+    return GP.fmt.deg(c.rotation, 3);
+  }, '45,000°');
+
+  b.is('Сквозная: сотые доли градуса видны, а не прячутся в ноль', function () {
+    var c = GP.transform.compare(place(0.03), referenceOf(place(0)));
+    return GP.fmt.deg(c.rotation, 3);
+  }, '0,030°');
+
+  b.le('Сквозная: масштаб эталона 1 против текущего 2 даёт ровно 1,0', function () {
+    var c = GP.transform.compare(place(0, 2), referenceOf(place(0, 1)));
+    return Math.abs(c.scaleRel - 1);
+  }, 1e-12, '');
+
+  b.is('Сквозная: мелкая разница масштаба — плюс два миллионных', function () {
+    var c = GP.transform.compare(place(0, 1.000002), referenceOf(place(0, 1)));
+    return (c.scaleRel > 0 ? '+' : '') + Math.round(c.scaleRel * 1e6) + ' млн\u207B\u00B9';
+  }, '+2 млн\u207B\u00B9');
+
+  /* Все три величины сразу: текущая привязка сдвинута на 100 м,
+     повёрнута на 30° и растянута в полтора раза. */
+  function triple() {
+    return GP.transform.compare(place(30, 1.5, 100), referenceOf(place(0, 1, 0)));
+  }
+
+  b.le('Три величины сразу: сдвиг ровно 100 м',
+       function () { return Math.abs(triple().shift - 100); }, 1e-3, 'м');
+  b.is('Три величины сразу: поворот +30° (текущая относительно эталона)',
+       function () { return GP.fmt.deg(triple().rotation, 3); }, '30,000°');
+  b.le('Три величины сразу: масштаб +0,5 относительно эталона',
+       function () { return Math.abs(triple().scaleRel - 0.5); }, 1e-12, '');
+  b.is('Три величины сразу: ничего не перепуталось местами', function () {
+    var c = triple();
+    return [Math.round(c.shift), Math.round(c.rotation), c.scaleRel.toFixed(1)].join('|');
+  }, '100|30|0.5');
+
+  b.is('Разброс по повороту при 0°, 12° и 350° равен 22°', function () {
+    var sp = GP.transform.spread([
+      { anchor: ANCHOR, rotation: 0 },
+      { anchor: ANCHOR, rotation: 12 },
+      { anchor: ANCHOR, rotation: 350 }
+    ]);
+    return GP.fmt.deg(sp.rotation, 2);
+  }, '22,00°');
+
+  b.is('Разброс по повороту идёт по той же кратчайшей дуге', function () {
+    var sp = GP.transform.spread([
+      { anchor: ANCHOR, rotation: 350 },
+      { anchor: ANCHOR, rotation: 10 }
+    ]);
+    var pairwise = GP.transform.compare(
+      { anchor: ANCHOR, rotation: 10, scale: 1 },
+      { anchor: ANCHOR, rotation: 350, scale: 1 });
+    return GP.fmt.deg(sp.rotation, 3) + ' / ' + GP.fmt.num(Math.abs(pairwise.rotation), 3);
+  }, '20,000° / 20,000');
+
+  b.le('Разброс: максимум по трём привязкам', function () {
+    var north = GP.geo.enuToGeodetic(0, 100, ANCHOR, 0);
+    var south = GP.geo.enuToGeodetic(0, -150, ANCHOR, 0);
+    var sp = GP.transform.spread([
+      { anchor: ANCHOR, rotation: 0 },
+      { anchor: { lat: north.lat, lon: north.lon }, rotation: 1 },
+      { anchor: { lat: south.lat, lon: south.lon }, rotation: -0.5 }
+    ]);
+    return Math.max(Math.abs(sp.shift - 250), Math.abs(sp.rotation - 1.5) * 1000);
+  }, 1e-3, 'м');
+
+  b.is('Разброс: одна привязка — нечего сравнивать', function () {
+    var sp = GP.transform.spread([{ anchor: ANCHOR, rotation: 10 }]);
+    return sp.shift + '/' + sp.rotation + '/' + sp.count;
+  }, '0/0/1');
+
+  b.is('Предупреждение про градусы подсказывает эталонный слой', function () {
+    var src = GP.store.build({ type: 'Polygon', coordinates:
+      [[[37.6, 55.75], [37.6005, 55.75], [37.6005, 55.7504], [37.6, 55.7504]]] }, 'g');
+    return GP.store.diagnose(src)[0].text.indexOf('эталонный слой') > 0;
+  }, true);
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Опорные точки', 'rows-gcp', 34);
+
+  var TRUE = { anchor: { lat: 55.7431, lon: 37.5908 }, rotation: 33.75, scale: 1 };
+
+  var _sample = null;
+  function sample() {
+    if (!_sample) _sample = GP.store.build(GP.sample.geojson, GP.sample.name);
+    return _sample;
+  }
+  function trueState() {
+    return { source: sample(), anchor: TRUE.anchor, rotation: TRUE.rotation, scale: TRUE.scale };
+  }
+
+  /* Точка-пара из вершины контура: куда её кладёт известное подобие,
+     плюс, если нужно, внесённая ошибка в метрах. */
+  function pair(index, opts) {
+    var o = opts || {};
+    var v = sample().vertices[index];
+    var ll = GP.transform.vertexLatLng(v.x, v.y, trueState());
+    var frame = GP.geo.frame({ lat: ll[0], lon: ll[1] });
+    var g = frame.toGeodetic(o.errE || 0, o.errN || 0, 0);
+    return {
+      id: 'p' + index, n: index + 1,
+      x: v.x, y: v.y, lat: g.lat, lon: g.lon,
+      enabled: o.enabled === false ? false : true,
+      control: !!o.control
+    };
+  }
+
+  /* Решение ищется из заведомо неверного начального положения. */
+  function solved(list) {
+    var st = {
+      source: sample(), anchor: { lat: 55.70, lon: 37.50 }, rotation: 0, scale: 1,
+      gcp: list, workScale: 500
+    };
+    var sol = GP.gcp.solve(st);
+    if (sol) {
+      st.anchor = sol.anchor;
+      st.rotation = sol.rotation;
+      st.scale = sol.scale;
+    }
+    return { state: st, solution: sol, stats: GP.gcp.stats(st) };
+  }
+
+  var FIVE = [0, 1, 3, 5, 7];
+  /* Вершина, в которую вносится грубая ошибка. Выбрана та, где вес
+     точки в решении невелик: ошибка остаётся в невязке, а не растворяется
+     в параметрах. Обратный случай проверяется отдельно. */
+  var BLUNDER = 3;
+  var HEAVY = 5;              /* вершина с большим весом: ошибка размазывается */
+
+  function clean() { return FIVE.map(function (i) { return pair(i); }); }
+
+  function withBlunder(extra) {
+    return FIVE.map(function (i) {
+      if (i !== BLUNDER) return pair(i);
+      var opts = { errE: 5 };
+      Object.keys(extra || {}).forEach(function (k) { opts[k] = extra[k]; });
+      return pair(i, opts);
+    });
+  }
+
+  /* ---------- две пары ---------- */
+
+  b.le('Две пары: невязка нулевая',
+       function () { return solved([pair(0), pair(3)]).stats.rms; }, 1e-5, 'м');
+  b.le('Две пары: угол восстановлен точно',
+       function () { return Math.abs(solved([pair(0), pair(3)]).solution.rotation - TRUE.rotation); },
+       1e-6, 'градуса');
+  b.is('Две пары: поднято предупреждение о тождественно нулевой невязке',
+       function () { return solved([pair(0), pair(3)]).stats.exact; }, true);
+
+  /* ---------- пять пар ---------- */
+
+  b.le('Пять пар: восстановленный масштаб',
+       function () { return Math.abs(solved(clean()).solution.scale - TRUE.scale); }, 1e-6, '');
+  b.le('Пять пар: восстановленный угол',
+       function () { return Math.abs(solved(clean()).solution.rotation - TRUE.rotation); },
+       1e-4, 'градуса');
+  b.le('Пять пар: восстановленная опорная точка', function () {
+    var a = solved(clean()).solution.anchor;
+    return GP.geo.vincentyInverse(TRUE.anchor.lat, TRUE.anchor.lon, a.lat, a.lon).distance;
+  }, 1e-3, 'м');
+  b.is('Пять пар: предупреждения о точном решении нет',
+       function () { return solved(clean()).stats.exact; }, false);
+
+  /* ---------- включение и выключение ---------- */
+
+  b.ge('Отключение подозрительной точки меняет параметры', function () {
+    var all = solved(withBlunder()).solution;
+    var less = solved(withBlunder({ enabled: false })).solution;
+    return Math.abs(all.rotation - less.rotation);
+  }, 1e-4, 'градуса');
+
+  b.le('Включение обратно возвращает прежние параметры', function () {
+    var before = solved(withBlunder()).solution;
+    solved(withBlunder({ enabled: false }));
+    var after = solved(withBlunder()).solution;
+    return Math.max(Math.abs(before.rotation - after.rotation),
+                    Math.abs(before.scale - after.scale) * 1e6);
+  }, 0, '');
+
+  b.le('Выключенная грубая точка перестаёт портить решение', function () {
+    var less = solved(withBlunder({ enabled: false })).solution;
+    var pure = solved(clean().filter(function (p) {
+      return p.x !== pair(BLUNDER).x || p.y !== pair(BLUNDER).y;
+    })).solution;
+    return Math.max(Math.abs(less.rotation - pure.rotation),
+                    Math.abs(less.scale - pure.scale));
+  }, 1e-12, '');
+
+  b.le('Отключённая точка не влияет на решение вовсе', function () {
+    var withOff = solved(clean().concat([pair(9, { errE: 5, enabled: false })])).solution;
+    var without = solved(clean()).solution;
+    return Math.max(Math.abs(withOff.rotation - without.rotation),
+                    Math.abs(withOff.scale - without.scale));
+  }, 1e-12, '');
+
+  /* ---------- контрольные точки ---------- */
+
+  b.le('Контрольная точка не влияет на параметры', function () {
+    var withControl = solved(clean().concat([pair(9, { errE: 5, control: true })])).solution;
+    var without = solved(clean()).solution;
+    return Math.max(Math.abs(withControl.rotation - without.rotation),
+                    Math.abs(withControl.scale - without.scale));
+  }, 1e-12, '');
+
+  b.le('Невязка контрольной точки считается и равна внесённой ошибке', function () {
+    var r = solved(clean().concat([pair(9, { errE: 5, control: true })]));
+    var control = r.stats.rows.filter(function (x) { return x.control; })[0];
+    return Math.abs(control.dS - 5);
+  }, 1e-3, 'м');
+
+  b.le('Контрольная точка не попадает в RMS учтённых', function () {
+    return solved(clean().concat([pair(9, { errE: 5, control: true })])).stats.rms;
+  }, 1e-5, 'м');
+
+  b.is('Контрольные точки считаются отдельно', function () {
+    var st = solved(clean().concat([pair(9, { errE: 5, control: true })])).stats;
+    return st.usedCount + '/' + st.controlCount + '/' + st.disabledCount;
+  }, '5/1/0');
+
+  /* ---------- грубая ошибка ---------- */
+
+  b.between('Ошибка 5 м в одной точке поднимает RMS', function () {
+    var v = solved(withBlunder()).stats.rms;
+    return { lo: v, hi: v };
+  }, 1, 3, 'м', 3);
+
+  b.is('Виновная точка — наибольшая невязка и единственный выброс', function () {
+    var r = solved(withBlunder());
+    var sorted = r.stats.rows.slice().sort(function (a, c) { return c.dS - a.dS; });
+    var flagged = r.stats.rows.filter(function (x) { return GP.gcp.isOutlier(x, r.stats); });
+    return sorted[0].pair.n + '/' + flagged.length + '/' +
+           (flagged.length ? flagged[0].pair.n : '-');
+  }, (BLUNDER + 1) + '/1/' + (BLUNDER + 1));
+
+  b.is('Ошибка в точке с большим весом не отделяется как выброс', function () {
+    var list = FIVE.map(function (i) { return pair(i, i === HEAVY ? { errE: 5 } : {}); });
+    var r = solved(list);
+    var flagged = r.stats.rows.filter(function (x) { return GP.gcp.isOutlier(x, r.stats); });
+    return flagged.length;
+  }, 0);
+
+  b.is('Но такая ошибка всё равно выводит RMS за допуск', function () {
+    var list = FIVE.map(function (i) { return pair(i, i === HEAVY ? { errE: 5 } : {}); });
+    var r = solved(list);
+    return r.stats.verdict + '/' + (r.stats.rms > r.stats.tolerance);
+  }, 'bad/true');
+
+  b.is('На чистых данных выбросов нет', function () {
+    var r = solved(clean());
+    return r.stats.rows.filter(function (x) { return GP.gcp.isOutlier(x, r.stats); }).length;
+  }, 0);
+
+  /* ---------- режим и допуски ---------- */
+
+  b.is('Положение задаётся точками начиная с двух учтённых', function () {
+    var one = { gcp: [pair(0)] };
+    var two = { gcp: [pair(0), pair(3)] };
+    var twoWithControl = { gcp: [pair(0), pair(3, { control: true })] };
+    return [GP.gcp.isLocked(one), GP.gcp.isLocked(two), GP.gcp.isLocked(twoWithControl)].join('/');
+  }, 'false/true/false');
+
+  b.is('Допуск: 0,3 мм в масштабе работ', function () {
+    return GP.fmt.len(GP.gcp.tolerance(500), 2) + ' / ' + GP.fmt.len(GP.gcp.tolerance(2000), 2);
+  }, '0,15' + GP.NBSP + 'м / 0,60' + GP.NBSP + 'м');
+
+  b.is('Светофор по допуску', function () {
+    return [GP.gcp.verdict(0.10, 0.15), GP.gcp.verdict(0.14, 0.15),
+            GP.gcp.verdict(0.20, 0.15)].join('/');
+  }, 'ok/warn/bad');
+
+  /* ---------- притяжение ---------- */
+
+  function project(x, y) { return { x: (x - 2180000) * 0.5, y: -(y - 476000) * 0.5 }; }
+
+  b.is('Притяжение: вершина ближе 12 пикселей', function () {
+    var snap = GP.gcp.snapToContour({ source: sample() }, project, { x: 10, y: 0 });
+    return snap.kind + ' ' + snap.x + ' ' + snap.y;
+  }, 'vertex 2180000 476000');
+
+  b.is('Притяжение: дальше 12 пикселей — точка на ребре', function () {
+    var snap = GP.gcp.snapToContour({ source: sample() }, project, { x: 225, y: 0 });
+    return snap.kind + ' ' + snap.x + ' ' + snap.y;
+  }, 'edge 2180450 476000');
+
+  /* ---------- передача управления точкам и возврат ручного ---------- */
+
+  /* Сценарий: контур совмещён руками, затем ставятся две пары. */
+  var MANUAL = { lat: 55.7512, lon: 37.6184, rotation: 3 };
+
+  function handoffScenario(goalShiftE) {
+    GP.store.load(sample(), { lat: MANUAL.lat, lon: MANUAL.lon });
+    GP.store.set({ rotation: MANUAL.rotation }, 't');
+    var g = GP.geo.enuToGeodetic(goalShiftE || -40, 25, { lat: MANUAL.lat, lon: MANUAL.lon }, 0);
+    var goal = { source: sample(), anchor: { lat: g.lat, lon: g.lon }, rotation: 11, scale: 1 };
+    [0, 2].forEach(function (i) {
+      var v = sample().vertices[i];
+      var ll = GP.transform.vertexLatLng(v.x, v.y, goal);
+      GP.store.snapshot();
+      GP.store.addGcp({ x: v.x, y: v.y, lat: ll[0], lon: ll[1], kind: 'vertex' });
+      GP.gcp.apply();
+    });
+    return GP.store.state;
+  }
+
+  function atManual(st) {
+    return Math.abs(st.rotation - MANUAL.rotation) < 1e-9 &&
+      GP.geo.vincentyInverse(MANUAL.lat, MANUAL.lon, st.anchor.lat, st.anchor.lon).distance < 1e-6;
+  }
+
+  b.is('Вторая пара запоминает отброшенное ручное положение', function () {
+    var h = handoffScenario().handoff;
+    return h.count + '/' + h.rotation + '/' + Math.round(h.shift) + '/' + h.big;
+  }, '2/3/47/false');
+
+  b.is('Ctrl+Z после второй пары возвращает ручное совмещение целиком', function () {
+    handoffScenario();
+    GP.store.undo();
+    var st = GP.store.state;
+    return atManual(st) + '/' + st.gcp.length + '/' + st.handoff;
+  }, 'true/1/null');
+
+  b.is('Повтор после отмены снова применяет решение', function () {
+    handoffScenario();
+    GP.store.undo();
+    GP.store.redo();
+    var st = GP.store.state;
+    return (Math.abs(st.rotation - 11) < 1e-6) + '/' + !!st.handoff;
+  }, 'true/true');
+
+  b.is('«Вернуть ручное»: положение вернулось, точки выключены, но остались', function () {
+    handoffScenario();
+    GP.gcp.restoreManual();
+    var st = GP.store.state;
+    return atManual(st) + '/' + st.gcp.length + '/' +
+      st.gcp.filter(function (p) { return p.enabled; }).length + '/' + GP.gcp.isLocked(st);
+  }, 'true/2/0/false');
+
+  b.is('«Вернуть ручное» тоже отменяется', function () {
+    handoffScenario();
+    GP.gcp.restoreManual();
+    GP.store.undo();
+    return Math.abs(GP.store.state.rotation - 11) < 1e-6;
+  }, true);
+
+  b.is('Смещение больше габарита помечено как подозрительное', function () {
+    return handoffScenario(5000).handoff.big;
+  }, true);
+
+  b.is('Новый контур сбрасывает точки прежнего файла', function () {
+    handoffScenario();
+    GP.store.load(sample(), { lat: MANUAL.lat, lon: MANUAL.lon });
+    return GP.store.state.gcp.length + '/' + GP.store.state.handoff;
+  }, '0/null');
+
+  /* ---------- выгрузка ---------- */
+
+  b.is('Выгрузка: блок опорных точек с флагами', function () {
+    var r = solved(clean().concat([pair(9, { errE: 5, control: true })]));
+    var data = GP.export.build(r.state, new Date(2026, 8, 24, 10, 0, 0));
+    var rows = data['опорные_точки'];
+    var control = rows.filter(function (x) { return x['контрольная']; })[0];
+    return rows.length + '/' + rows.filter(function (x) { return x['учитывается']; }).length +
+           '/' + Math.round(control.dS);
+  }, '6/5/5');
+
+  b.is('Выгрузка: оценка точности с вердиктом', function () {
+    var r = solved(withBlunder());
+    var q = GP.export.build(r.state, new Date(2026, 8, 24, 10, 0, 0))['оценка_точности'];
+    return q['масштаб_работ'] + ' / ' + q['допуск_м'] + ' / ' + q['вердикт'] +
+           ' / ' + q['учтённых_точек'];
+  }, '1:500 / 0.15 / вне допуска / 5');
+})();
+</script>
+
+<script>
+(function () {
+  var b = T.block('Устойчивость к ошибке клика', 'rows-click', 12);
+  var NB = GP.NBSP;
+
+  /* Участок А из examples/ — константой: по file:// файл не прочитать. */
+  var RING_A = [[2245600,476200],[2245918,476200],[2245918,476296],[2245842,476296],[2245842,476358],[2245796,476362],[2245796,476441],[2245684,476441],[2245684,476398],[2245637,476391],[2245600,476348],[2245600,476200]];
+  var MPP = 1.3;                    /* метров на пиксель */
+  var TRIALS = 1000;
+  var NS = [2, 3, 4, 6];
+  var SIGMAS = [0.5, 1, 2, 3, 5];
+  /* Вершины (от юго-западного угла): 0 — угол, 1 — юго-восточный угол,
+     6 — верх справа, 10 — запад; 7–10 — северо-западный угол. */
+  var SPREAD = [0, 1, 6, 10];
+  var CLUSTER = [7, 8, 9, 10];
+
+  var _src = null;
+  function src() {
+    if (!_src) _src = GP.store.build({ type: 'Polygon', coordinates: [RING_A] }, 'участок-А');
+    return _src;
+  }
+  var _truth = null;
+  function truth() {
+    if (!_truth) _truth = { source: src(), anchor: { lat: 55.7431, lon: 37.5908 }, rotation: 23, scale: 1 };
+    return _truth;
+  }
+
+  /* Генератор с фиксированным зерном: числа не пляшут от прогона к прогону. */
+  function rng(seed) {
+    var a = seed;
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(r) {
+    var u = 0;
+    while (u === 0) u = r();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r());
+  }
+  function pick(r, n, k) {
+    var a = [];
+    for (var i = 0; i < n; i++) a.push(i);
+    for (var j = 0; j < k; j++) {
+      var m = j + Math.floor(r() * (n - j));
+      var t = a[j]; a[j] = a[m]; a[m] = t;
+    }
+    return a.slice(0, k);
+  }
+
+  /* Один повтор: истинные точки карты, шум только на карточной стороне,
+     подгонка тем же GP.gcp.solve, что в приложении. */
+  function trial(r, idx, sigmaPx) {
+    var t = truth(), s = sigmaPx * MPP;
+    var pairs = idx.map(function (i, k) {
+      var v = src().vertices[i];
+      var ll = GP.transform.vertexLatLng(v.x, v.y, t);
+      var g = s ? GP.geo.frame({ lat: ll[0], lon: ll[1] }).toGeodetic(gauss(r) * s, gauss(r) * s, 0)
+                : { lat: ll[0], lon: ll[1] };
+      return { id: 'p' + k, n: k + 1, x: v.x, y: v.y, lat: g.lat, lon: g.lon, enabled: true, control: false };
+    });
+    var sol = GP.gcp.solve({ source: src(), gcp: pairs });
+    return {
+      pos: GP.geo.vincentyInverse(t.anchor.lat, t.anchor.lon, sol.anchor.lat, sol.anchor.lon).distance,
+      rot: Math.abs(GP.transform.normalizeAngle(sol.rotation - t.rotation))
+    };
+  }
+
+  function summarize(list) {
+    function rms(k) { return Math.sqrt(list.reduce(function (a, x) { return a + x[k] * x[k]; }, 0) / list.length); }
+    function p95(k) {
+      var v = list.map(function (x) { return x[k]; }).sort(function (a, c) { return a - c; });
+      return v[Math.ceil(0.95 * v.length) - 1];
+    }
+    return { posRms: rms('pos'), pos95: p95('pos'), rotRms: rms('rot'), rot95: p95('rot') };
+  }
+
+  /* ---------- измерение ---------- */
+
+  var cells = {};
+  var measured = false;
+  function measure() {
+    if (measured) return cells;
+    var r = rng(20260924);
+    NS.forEach(function (N) {
+      SIGMAS.forEach(function (sg) {
+        var list = [];
+        for (var k = 0; k < TRIALS; k++) list.push(trial(r, pick(r, src().vertices.length, N), sg));
+        cells[N + '/' + sg] = summarize(list);
+      });
+    });
+    var r2 = rng(20260925);
+    [['spread', SPREAD], ['cluster', CLUSTER]].forEach(function (pair) {
+      var list = [];
+      for (var k = 0; k < TRIALS; k++) list.push(trial(r2, pair[1], 1));
+      cells[pair[0]] = summarize(list);
+    });
+    measured = true;
+    return cells;
+  }
+
+  function m(v) { return GP.fmt.num(v, 2); }
+  function d(v) { return GP.fmt.num(v, 3); }
+
+  /* Таблицы печатаются даже если какая-то граница не выдержана:
+     это измерение, его надо видеть целиком. */
+  try {
+    var c = measure();
+    var rows = [], tsv = ['N\tσ, пикс\tσ, м\tПоложение RMS, м\tПоложение 95 %, м\tПоворот RMS, °\tПоворот 95 %, °'];
+    NS.forEach(function (N, ni) {
+      SIGMAS.forEach(function (sg, si) {
+        var x = c[N + '/' + sg];
+        rows.push('<tr' + (si === 0 && ni > 0 ? ' class="group"' : '') + '>' +
+          '<td>' + (si === 0 ? N : '') + '</td><td>' + GP.fmt.num(sg, sg % 1 ? 1 : 0) + '</td><td>' +
+          GP.fmt.num(sg * MPP, 2) + '</td><td>' + m(x.posRms) + '</td><td>' + m(x.pos95) + '</td><td>' +
+          d(x.rotRms) + '</td><td>' + d(x.rot95) + '</td></tr>');
+        tsv.push([N, GP.fmt.num(sg, sg % 1 ? 1 : 0), GP.fmt.num(sg * MPP, 2), m(x.posRms), m(x.pos95),
+                  d(x.rotRms), d(x.rot95)].join('\t'));
+      });
+    });
+    document.getElementById('click-table').innerHTML = rows.join('');
+
+    tsv.push('');
+    tsv.push('Расположение, N = 4, σ = 1 пикс\tВершины\tПоложение RMS, м\tПоложение 95 %, м\tПоворот RMS, °\tПоворот 95 %, °');
+    document.getElementById('click-geometry').innerHTML = [
+      ['разнесены по периметру', SPREAD, c.spread],
+      ['сгруппированы в северо-западном углу', CLUSTER, c.cluster]
+    ].map(function (g) {
+      tsv.push([g[0], g[1].join(', '), m(g[2].posRms), m(g[2].pos95), d(g[2].rotRms), d(g[2].rot95)].join('\t'));
+      return '<tr><td class="label">' + g[0] + '</td><td class="label">' + g[1].join(', ') + '</td><td>' +
+        m(g[2].posRms) + '</td><td>' + m(g[2].pos95) + '</td><td>' + d(g[2].rotRms) + '</td><td>' +
+        d(g[2].rot95) + '</td></tr>';
+    }).join('');
+    document.getElementById('click-tsv').textContent = tsv.join('\n');
+  } catch (e) {
+    document.getElementById('click-table').innerHTML =
+      '<tr><td class="label" colspan="7">Измерение не выполнено: ' + e.message + '</td></tr>';
+  }
+
+  /* ---------- границы ---------- */
+
+  b.raw('σ = 0: ошибка нулевая при N = 2, 3, 4, 6', function () {
+    var r = rng(20260926), pos = 0, rot = 0;
+    NS.forEach(function (N) {
+      for (var k = 0; k < 50; k++) {
+        var x = trial(r, pick(r, src().vertices.length, N), 0);
+        pos = Math.max(pos, x.pos); rot = Math.max(rot, x.rot);
+      }
+    });
+    return { got: T.val(pos, 'м') + ', ' + T.q(rot) + '°', want: '\u2264' + NB + '1·10⁻⁶' + NB + 'м, 1·10⁻⁶°',
+             ok: pos <= 1e-6 && rot <= 1e-6 };
+  });
+
+  function chain(values, digits) { return values.map(function (v) { return GP.fmt.num(v, digits); }).join(' \u2192 '); }
+  function rising(values) { for (var i = 1; i < values.length; i++) if (!(values[i] > values[i - 1])) return false; return true; }
+  function falling(values) { for (var i = 1; i < values.length; i++) if (!(values[i] < values[i - 1])) return false; return true; }
+
+  NS.forEach(function (N) {
+    b.raw('Ошибка растёт с σ при N = ' + N, function () {
+      var c = measure();
+      var pos = SIGMAS.map(function (sg) { return c[N + '/' + sg].posRms; });
+      var rot = SIGMAS.map(function (sg) { return c[N + '/' + sg].rotRms; });
+      return { got: 'положение ' + chain(pos, 2) + ' м; поворот ' + chain(rot, 3) + '°',
+               want: 'строго растёт', ok: rising(pos) && rising(rot) };
+    });
+  });
+
+  SIGMAS.forEach(function (sg) {
+    b.raw('Ошибка убывает с N при σ = ' + GP.fmt.num(sg, sg % 1 ? 1 : 0) + NB + 'пикс', function () {
+      var c = measure();
+      var pos = NS.map(function (N) { return c[N + '/' + sg].posRms; });
+      var rot = NS.map(function (N) { return c[N + '/' + sg].rotRms; });
+      return { got: 'положение ' + chain(pos, 2) + ' м; поворот ' + chain(rot, 3) + '°',
+               want: 'строго убывает', ok: falling(pos) && falling(rot) };
+    });
+  });
+
+  b.le('N = 2, σ = 1 пикс: RMS ошибки положения',
+       function () { return measure()['2/1'].posRms; }, 5, 'м', 2);
+
+  b.raw('Разнесённые точки дают меньшую ошибку поворота, чем сгруппированные', function () {
+    var c = measure();
+    return { got: d(c.spread.rotRms) + '° против ' + d(c.cluster.rotRms) + '°, в ' +
+                  GP.fmt.num(c.cluster.rotRms / c.spread.rotRms, 1) + NB + 'раза',
+             want: 'разнесённые < сгруппированных', ok: c.spread.rotRms < c.cluster.rotRms };
+  });
+})();
+</script>
+
+<script>T.summary();</script>
+
+</body>
+</html>

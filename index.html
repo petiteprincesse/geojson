@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Геопривязка — демо</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <div class="toolbar">
+    <h1 class="toolbar__title">Геопривязка</h1>
+    <span class="toolbar__sep" aria-hidden="true"></span>
+    <span class="toolbar__label" id="basemap-label">Подложка</span>
+    <div class="seg" id="basemap-switch" role="group" aria-labelledby="basemap-label"></div>
+    <span class="toolbar__sep" aria-hidden="true"></span>
+    <button type="button" class="btn btn--icon" id="undo" aria-label="Отменить" disabled></button>
+    <button type="button" class="btn btn--icon" id="redo" aria-label="Вернуть" disabled></button>
+    <span class="toolbar__spacer"></span>
+    <button type="button" class="btn" id="toggle-panels" aria-pressed="false">Скрыть панели</button>
+  </div>
+
+  <aside class="panel panel--left" id="panel-left">
+    <div class="panel__head">
+      <h2 class="panel__title">Проект</h2>
+      <button type="button" class="btn btn--icon" id="collapse-left"
+              aria-controls="panel-left" aria-expanded="true"
+              aria-label="Свернуть панель «Проект»"></button>
+    </div>
+    <div class="panel__body">
+
+      <div class="actions">
+        <button type="button" class="btn" id="pick-file">Выбрать файл</button>
+        <button type="button" class="btn" id="load-sample">Загрузить пример</button>
+      </div>
+      <input type="file" id="file-input" class="visually-hidden" multiple
+             accept=".geojson,.json,application/geo+json">
+      <p class="hint">Файлы можно перетащить в окно — несколько сразу.</p>
+
+      <div class="msg msg--danger" id="load-error" role="alert" hidden></div>
+
+      <h3 class="subhead">Слои</h3>
+      <ul class="layers" id="layers">
+        <li class="layer">
+          <div class="layer__line">
+            <input type="checkbox" class="check" id="basemap-visible" checked
+                   aria-label="Показывать подложку">
+            <span class="layer__name" id="basemap-name">Подложка</span>
+            <span class="layer__meta">подложка</span>
+          </div>
+        </li>
+        <li class="layer" id="row-layer" hidden>
+          <div class="layer__line">
+            <input type="checkbox" class="check" id="layer-visible" checked
+                   aria-label="Показывать слой контура">
+            <span class="layer__name" id="layer-name">Контур</span>
+            <span class="layer__meta num" id="layer-count"></span>
+            <button type="button" class="btn btn--icon" id="layer-fit"
+                    aria-label="Вписать контур в вид"></button>
+          </div>
+          <div class="layer__line layer__line--sub">
+            <label class="layer__sub" for="layer-opacity">Заливка</label>
+            <input type="range" class="range" id="layer-opacity" min="0" max="60" value="15"
+                   aria-label="Прозрачность заливки контура">
+            <span class="layer__meta num" id="layer-opacity-value">15 %</span>
+          </div>
+        </li>
+      </ul>
+      <p class="msg msg--warning" id="basemap-status" role="status" hidden></p>
+
+      <div id="diag" hidden>
+        <h3 class="subhead">Файл</h3>
+        <dl class="readout" id="diag-stats"></dl>
+        <div id="diag-warnings"></div>
+        <div class="msg msg--info" id="units-hint" role="status" hidden>
+          <p class="units-hint__text" id="units-hint-text"></p>
+          <button type="button" class="btn btn--compact" id="units-hint-apply">Применить миллиметры</button>
+        </div>
+      </div>
+
+      <div class="empty" id="left-empty">
+        <p class="empty__title">Слой не загружен</p>
+        <p class="empty__text">Откройте файл geojson с границей проектирования
+          или загрузите пример. Система координат слоя, число вершин
+          и размеры контура появятся в этой панели.</p>
+      </div>
+
+    </div>
+  </aside>
+
+  <main class="canvas" id="canvas">
+    <div id="map"></div>
+    <div class="dropzone" id="dropzone" hidden>
+      <div class="dropzone__box">Отпустите файл, чтобы загрузить контур</div>
+    </div>
+  </main>
+
+  <aside class="panel panel--right" id="panel-right">
+    <div class="panel__head">
+      <h2 class="panel__title">Привязка</h2>
+      <button type="button" class="btn btn--icon" id="collapse-right"
+              aria-controls="panel-right" aria-expanded="true"
+              aria-label="Свернуть панель «Привязка»"></button>
+    </div>
+    <div class="panel__body">
+
+      <div class="empty" id="right-empty">
+        <p class="empty__title">Контур не привязан</p>
+        <p class="empty__text">Загрузите слой в панели «Проект», перетащите
+          контур мышью на нужное место и поверните его за круглую ручку.
+          Параметры привязки появятся здесь.</p>
+      </div>
+
+      <div id="binding" hidden>
+        <dl class="readout">
+          <div class="readout__row">
+            <dt>Опорная точка</dt>
+            <dd class="mono" id="ro-anchor">—</dd>
+          </div>
+          <div class="readout__row">
+            <dt>Она же в файле</dt>
+            <dd class="mono" id="ro-anchor-local">—</dd>
+          </div>
+          <div class="readout__row">
+            <dt>Азимут оси +Y</dt>
+            <dd class="mono" id="ro-azimuth">—</dd>
+          </div>
+        </dl>
+
+        <div class="field">
+          <label class="field__label" for="rotation-input">Поворот против часовой, градусы</label>
+          <input type="text" class="input mono" id="rotation-input" value="0" inputmode="decimal">
+          <p class="field__hint">Q и E поворачивают на 0,5°, с Shift — на 5°.
+            Ручка на карте вращает свободно, с Shift — шагом 15°.</p>
+          <p class="msg msg--danger" id="rotation-error" role="alert" hidden></p>
+        </div>
+
+        <div class="field">
+          <div class="field__row">
+            <span class="field__cell">
+              <label class="field__label" for="units-select">Единицы файла</label>
+              <select class="select" id="units-select"></select>
+            </span>
+            <span class="field__cell field__cell--narrow">
+              <label class="field__label" for="scale-input">Метров в единице</label>
+              <input type="text" class="input mono" id="scale-input" value="1" inputmode="decimal">
+            </span>
+          </div>
+          <p class="field__hint">Если габарит контура выглядит в тысячу раз больше
+            ожидаемого — файл в миллиметрах.</p>
+          <p class="msg msg--danger" id="scale-error" role="alert" hidden></p>
+        </div>
+
+        <dl class="readout">
+          <div class="readout__row">
+            <dt>Масштаб</dt>
+            <dd class="mono" id="ro-scale">—</dd>
+          </div>
+          <div class="readout__row">
+            <dt>Габарит на карте</dt>
+            <dd class="mono" id="ro-size">—</dd>
+          </div>
+          <div class="readout__row">
+            <dt>Вершин</dt>
+            <dd class="mono" id="ro-vertices">—</dd>
+          </div>
+          <div class="readout__row">
+            <dt>Погрешность модели</dt>
+            <dd class="mono" id="ro-error">—</dd>
+          </div>
+        </dl>
+
+        <p class="hint" id="vertex-note" hidden></p>
+        <p class="hint">Стрелки сдвигают на 1 м, с Shift — на 10 м.
+          Q и E поворачивают на 0,5°, с Shift — на 5°.</p>
+
+        <h3 class="subhead">Опорные точки</h3>
+        <button type="button" class="btn btn--wide" id="gcp-mode" aria-pressed="false">
+          Опорные точки</button>
+        <p class="hint" id="gcp-hint" hidden></p>
+        <div id="gcp-handoff" hidden>
+          <p class="msg msg--info" id="gcp-handoff-text"></p>
+          <p class="msg msg--warning" id="gcp-handoff-big" hidden></p>
+          <button type="button" class="btn btn--wide" id="gcp-restore">Вернуть ручное</button>
+        </div>
+        <p class="msg msg--warning" id="gcp-lock" hidden>Положение задано опорными
+          точками. Чтобы двигать вручную, отключите или удалите точки.</p>
+        <dl class="readout" id="gcp-stats"></dl>
+        <p class="msg msg--warning" id="gcp-exact" hidden></p>
+        <div class="field__row">
+          <span class="field__cell">
+            <label class="field__label" for="work-scale">Масштаб работ</label>
+            <select class="select" id="work-scale"></select>
+          </span>
+          <span class="field__cell">
+            <label class="field__label" for="vector-scale">Векторы невязок</label>
+            <select class="select" id="vector-scale">
+              <option value="0">не показывать</option>
+              <option value="10">×10</option>
+              <option value="50" selected>×50</option>
+              <option value="100">×100</option>
+            </select>
+          </span>
+        </div>
+      </div>
+
+      <div id="compare" hidden>
+        <h3 class="subhead">Сравнение</h3>
+        <div id="compare-body"></div>
+      </div>
+
+      <div id="export-block" hidden>
+        <h3 class="subhead">Выгрузка</h3>
+        <button type="button" class="btn btn--primary btn--wide" id="export-json">Привязать и скачать</button>
+        <div class="field__row">
+          <button type="button" class="btn btn--wide" id="export-csv">Каталог CSV</button>
+          <button type="button" class="btn btn--wide" id="export-geojson">Контур geojson</button>
+        </div>
+        <div class="field__row">
+          <span class="field__cell">
+            <label class="field__label" for="csv-delimiter">Разделитель столбцов</label>
+            <select class="select" id="csv-delimiter">
+              <option value=";">точка с запятой</option>
+              <option value=",">запятая</option>
+            </select>
+          </span>
+          <span class="field__cell">
+            <label class="field__label" for="csv-decimal">Десятичный знак</label>
+            <select class="select" id="csv-decimal">
+              <option value=",">запятая</option>
+              <option value=".">точка</option>
+            </select>
+          </span>
+        </div>
+        <div id="export-summary" hidden></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <section class="gcp-panel" id="gcp-panel" hidden aria-labelledby="gcp-panel-title">
+    <div class="gcp-panel__head">
+      <h2 class="panel__title" id="gcp-panel-title">Опорные точки</h2>
+      <span class="gcp-panel__meta num" id="gcp-meta"></span>
+      <button type="button" class="btn btn--icon" id="gcp-collapse"
+              aria-expanded="true" aria-controls="gcp-panel-body"
+              aria-label="Свернуть таблицу опорных точек"></button>
+    </div>
+    <div class="gcp-panel__body" id="gcp-panel-body">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th class="grid__narrow">Вкл</th>
+            <th class="grid__narrow">№</th>
+            <th class="num" title="координата X в системе файла">X файла</th>
+            <th class="num" title="координата Y в системе файла">Y файла</th>
+            <th class="num" title="долгота, градусы">X карты</th>
+            <th class="num" title="широта, градусы">Y карты</th>
+            <th class="num" title="невязка на север, метры">dN</th>
+            <th class="num" title="невязка на восток, метры">dE</th>
+            <th class="num" title="полная невязка, метры">dS</th>
+            <th class="grid__narrow">Контрольная</th>
+            <th class="grid__narrow"></th>
+          </tr>
+        </thead>
+        <tbody id="gcp-rows"></tbody>
+      </table>
+      <p class="hint" id="gcp-empty">Включите режим «Опорные точки» и укажите пару:
+        сначала точку на контуре, затем место, куда она должна попасть.</p>
+    </div>
+  </section>
+
+  <div class="statusbar" id="statusbar">
+    <span class="statusbar__group">
+      <span class="statusbar__label">Курсор</span>
+      <span class="statusbar__value statusbar__value--mono is-empty" id="st-cursor">—</span>
+    </span>
+    <span class="statusbar__group">
+      <span class="statusbar__label">Масштаб</span>
+      <span class="statusbar__value" id="st-scale">—</span>
+    </span>
+    <span class="statusbar__group">
+      <span class="statusbar__label">Разрешение</span>
+      <span class="statusbar__value" id="st-mpp">—</span>
+    </span>
+    <span class="statusbar__spacer"></span>
+    <button type="button" class="btn btn--icon" id="theme-toggle"
+            aria-pressed="false" aria-label="Включить тёмную тему"></button>
+  </div>
+
+</div>
+
+<div class="dialog-scrim" id="dialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <h2 class="dialog__title" id="dialog-title">Это результат привязки</h2>
+    <p class="dialog__text" id="dialog-text"></p>
+    <div class="dialog__actions">
+      <button type="button" class="btn" id="dialog-cancel">Отмена</button>
+      <button type="button" class="btn btn--primary" id="dialog-confirm">Открыть как эталон</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="js/ns.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sample.js"></script>
+<script src="js/map.js"></script>
+<script src="js/transform.js"></script>
+<script src="js/layers.js"></script>
+<script src="js/gcp.js"></script>
+<script src="js/export.js"></script>
+<script src="js/ui.js"></script>
+
+</body>
+</html>

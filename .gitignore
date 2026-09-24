@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+*.log
+*_привязка_*.json
+*_привязка_*.csv
+*_привязка_*.geojson
